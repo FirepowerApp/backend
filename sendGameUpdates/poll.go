@@ -38,24 +38,28 @@ func PollHandler(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Polling for GameID: %s\n", payload.GameID)
 
-	// Query the below URL for game data
-	// https://moneypuck.com/moneypuck/gameData/20242025/2024030325.csv
 	url := "https://moneypuck.com/moneypuck/gameData/20242025/2024030325.csv"
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Fatalf("Failed to fetch game data: %v", err)
+		log.Printf("Failed to fetch game data: %v", err)
+		http.Error(w, "Failed to fetch game data", http.StatusInternalServerError)
+		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Fatalf("Failed to fetch game data, status code: %d", resp.StatusCode)
+		log.Printf("Failed to fetch game data, status code: %d", resp.StatusCode)
+		http.Error(w, "Failed to fetch game data", http.StatusInternalServerError)
+		return
 	}
 
 	reader := csv.NewReader(resp.Body)
 
 	records, err := reader.ReadAll()
 	if err != nil {
-		log.Fatalf("Failed to read CSV data: %v", err)
+		log.Printf("Failed to read CSV data: %v", err)
+		http.Error(w, "Failed to fetch game data", http.StatusInternalServerError)
+		return
 	}
 
 	header := records[0]
@@ -73,7 +77,9 @@ func PollHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Validate that both columns were found
 	if homeIdx == -1 || awayIdx == -1 {
-		log.Fatalf("Could not find one or both columns: homeTeamExpectedGoals, awayTeamExpectedGoals")
+		log.Printf("Could not find one or both columns: homeTeamExpectedGoals, awayTeamExpectedGoals")
+		http.Error(w, "Failed to fetch game data", http.StatusInternalServerError)
+		return
 	}
 
 	// Print the values from the last row

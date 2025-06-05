@@ -38,7 +38,7 @@ func PollHandler(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Polling for GameID: %s\n", payload.GameID)
 
-	url := "https://moneypuck.com/moneypuck/gameData/20242025/2024030325.csv"
+	url := fmt.Sprintf("https://moneypuck.com/moneypuck/gameData/20242025/%s.csv", payload.GameID)
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Printf("Failed to fetch game data: %v", err)

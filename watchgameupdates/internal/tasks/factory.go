@@ -3,6 +3,7 @@ package tasks
 
 import (
 	"context"
+	"log"
 	"os"
 	"watchgameupdates/config"
 
@@ -13,10 +14,11 @@ import (
 
 func NewCloudTasksClient(ctx context.Context, cfg *config.Config) (CloudTasksClient, error) {
 	if cfg.Env == "local" && cfg.CloudTasksAddress != "" {
+		log.Printf("Using local Cloud Tasks emulator at %s", cfg.CloudTasksAddress)
 		// Connect to emulator using plaintext (no TLS)
 		conn, err := grpc.Dial(
 			os.Getenv("CLOUD_TASKS_EMULATOR_HOST"),
-			grpc.WithInsecure(), // 👈 disables TLS
+			grpc.WithInsecure(),
 		)
 		if err != nil {
 			return nil, err
@@ -27,6 +29,8 @@ func NewCloudTasksClient(ctx context.Context, cfg *config.Config) (CloudTasksCli
 		}
 		return &realClient{client: client}, nil
 	}
+
+	log.Printf("Using production Cloud Tasks client with default credentials")
 
 	// Production client with default credentials
 	client, err := cloudtasks.NewClient(ctx)

@@ -91,8 +91,7 @@ func scheduleNextCheck(ctx context.Context, payload models.Payload) error {
 	}
 	defer tasksClient.Close()
 
-	// Schedule the task for 30 seconds from now (adjust as needed)
-	scheduleTime := timestamppb.New(time.Now().Add(30 * time.Second))
+	scheduleTime := timestamppb.New(time.Now().Add(60 * time.Second))
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {

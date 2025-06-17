@@ -25,10 +25,27 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 		return
 	}
 
+	log.Printf("Raw body: %s", body)
+
 	var payload models.Payload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
 		return
+	}
+
+	if payload.MaxExecutionTime != nil {
+		maxExecutionTime, err := time.Parse(time.RFC3339, *payload.MaxExecutionTime)
+		if err != nil {
+			http.Error(w, "Invalid scheduled_time format", http.StatusBadRequest)
+			return
+		}
+
+		if time.Now().After(maxExecutionTime) {
+			log.Printf("Current time is after scheduled time (%s). Skipping execution.", maxExecutionTime.Format(time.RFC3339))
+			return
+		}
+	} else {
+		log.Println("Max execution time not set, proceeding without time check.")
 	}
 
 	lastPlay := services.FetchPlayByPlay(payload.GameID)
@@ -53,7 +70,7 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 	}
 
 	shouldReschedule := services.ShouldReschedule(payload, lastPlay)
-	log.Printf("Last play type: %s, Force reschedule: %v, Should reschedule: %v\n", lastPlay.TypeDescKey, *payload.ForceReschedule, shouldReschedule)
+	log.Printf("Last play type: %s, Should reschedule: %v\n", lastPlay.TypeDescKey, shouldReschedule)
 
 	if shouldReschedule {
 		if err := scheduleNextCheck(r.Context(), payload); err != nil {
@@ -77,10 +94,6 @@ func scheduleNextCheck(ctx context.Context, payload models.Payload) error {
 	// Schedule the task for 30 seconds from now (adjust as needed)
 	scheduleTime := timestamppb.New(time.Now().Add(30 * time.Second))
 
-	// Reset force reschedule to false
-	newForceReschedule := false
-	payload.ForceReschedule = &newForceReschedule
-
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal reschedule payload: %w", err)
@@ -93,7 +106,12 @@ func scheduleNextCheck(ctx context.Context, payload models.Payload) error {
 
 	queuePath := fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queueName)
 
-	// Create the task
+	if payload.MaxExecutionTime != nil {
+		log.Printf("Max execution time for game %s is set to %s", payload.GameID, *payload.MaxExecutionTime)
+	} else {
+		log.Printf("Max execution time for game %s is not set", payload.GameID)
+	}
+
 	task := &taskspb.Task{
 		MessageType: &taskspb.Task_HttpRequest{
 			HttpRequest: &taskspb.HttpRequest{
@@ -118,6 +136,6 @@ func scheduleNextCheck(ctx context.Context, payload models.Payload) error {
 		return fmt.Errorf("failed to create reschedule task: %w", err)
 	}
 
-	log.Printf("Successfully scheduled next check task for game %s at %v", payload.GameID, scheduleTime)
+	log.Printf("Successfully scheduled next check task for game %s at %v", payload.GameID, scheduleTime.AsTime().Format(time.RFC3339))
 	return nil
 }

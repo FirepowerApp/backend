@@ -85,7 +85,10 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 func scheduleNextCheck(ctx context.Context, payload models.Payload) error {
 	cfg := config.LoadConfig()
 
-	tasksClient, err := tasks.NewCloudTasksClient(ctx, cfg)
+	tasksCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	tasksClient, err := tasks.NewCloudTasksClient(tasksCtx, cfg)
 	if err != nil {
 		log.Fatalf("failed to create tasks client: %v", err)
 	}
@@ -130,7 +133,7 @@ func scheduleNextCheck(ctx context.Context, payload models.Payload) error {
 		Task:   task,
 	}
 
-	_, err = tasksClient.CreateTask(ctx, req)
+	_, err = tasksClient.CreateTask(tasksCtx, req)
 	if err != nil {
 		return fmt.Errorf("failed to create reschedule task: %w", err)
 	}

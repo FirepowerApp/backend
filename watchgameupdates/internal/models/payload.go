@@ -1,6 +1,6 @@
 package models
 
 type Payload struct {
-	GameID           string  `json:"game_id"`
-	MaxExecutionTime *string `json:"max_execution_time,omitempty"`
+	GameID       string  `json:"game_id"`
+	ExecutionEnd *string `json:"execution_end,omitempty"`
 }

@@ -33,15 +33,15 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 		return
 	}
 
-	if payload.MaxExecutionTime != nil {
-		maxExecutionTime, err := time.Parse(time.RFC3339, *payload.MaxExecutionTime)
+	if payload.ExecutionEnd != nil {
+		executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
 		if err != nil {
 			http.Error(w, "Invalid scheduled_time format", http.StatusBadRequest)
 			return
 		}
 
-		if time.Now().After(maxExecutionTime) {
-			log.Printf("Current time is after scheduled time (%s). Skipping execution.", maxExecutionTime.Format(time.RFC3339))
+		if time.Now().After(executionEnd) {
+			log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
 			return
 		}
 	} else {
@@ -106,8 +106,8 @@ func scheduleNextCheck(ctx context.Context, payload models.Payload) error {
 
 	queuePath := fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queueName)
 
-	if payload.MaxExecutionTime != nil {
-		log.Printf("Max execution time for game %s is set to %s", payload.GameID, *payload.MaxExecutionTime)
+	if payload.ExecutionEnd != nil {
+		log.Printf("Max execution time for game %s is set to %s", payload.GameID, *payload.ExecutionEnd)
 	} else {
 		log.Printf("Max execution time for game %s is not set", payload.GameID)
 	}

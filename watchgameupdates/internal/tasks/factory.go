@@ -30,8 +30,6 @@ func NewCloudTasksClient(ctx context.Context, cfg *config.Config) (CloudTasksCli
 		return &realClient{client: client}, nil
 	}
 
-	log.Printf("Using production Cloud Tasks client with default credentials")
-
 	// Production client with default credentials
 	client, err := cloudtasks.NewClient(ctx)
 	if err != nil {

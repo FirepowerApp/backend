@@ -73,7 +73,7 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 	log.Printf("Last play type: %s, Should reschedule: %v\n", lastPlay.TypeDescKey, shouldReschedule)
 
 	if shouldReschedule {
-		if err := scheduleNextCheck(r.Context(), payload); err != nil {
+		if err := scheduleNextCheck(payload); err != nil {
 			log.Printf("Failed to schedule next check: %v", err)
 			http.Error(w, "Failed to schedule next check", http.StatusInternalServerError)
 			return
@@ -82,7 +82,7 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 }
 
 // scheduleNextCheck creates a Cloud Task to reschedule the next game check
-func scheduleNextCheck(ctx context.Context, payload models.Payload) error {
+func scheduleNextCheck(payload models.Payload) error {
 	cfg := config.LoadConfig()
 
 	tasksCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

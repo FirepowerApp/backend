@@ -14,9 +14,6 @@ func ShouldReschedule(payload models.Payload, lastPlay models.Play) bool {
 		} else if time.Now().After(executionEnd) {
 			log.Printf("Max execution time (%s) is set and has been reached. Do not reschedule.", executionEnd.Format(time.RFC3339))
 			return false
-		} else {
-			log.Printf("Max execution time (%s) is set and not reached. Continue exection.", executionEnd.Format(time.RFC3339))
-			return true
 		}
 	} else {
 		log.Println("Max execution time not set, proceeding without time check.")

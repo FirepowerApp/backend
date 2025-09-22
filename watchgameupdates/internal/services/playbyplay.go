@@ -6,11 +6,18 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"watchgameupdates/internal/models"
 )
 
 func FetchPlayByPlay(gameID string) (lastPlay models.Play) {
-	playByPlayUrl := fmt.Sprintf("https://api-web.nhle.com/v1/gamecenter/%s/play-by-play", gameID)
+	// Get play-by-play API base URL from environment variable
+	playByPlayAPIBaseURL := os.Getenv("PLAYBYPLAY_API_BASE_URL")
+	if playByPlayAPIBaseURL == "" {
+		playByPlayAPIBaseURL = "https://api-web.nhle.com" // Default production URL
+	}
+
+	playByPlayUrl := fmt.Sprintf("%s/v1/gamecenter/%s/play-by-play", playByPlayAPIBaseURL, gameID)
 	resp, err := http.Get(playByPlayUrl)
 	if err != nil {
 		log.Printf("Failed to fetch play-by-play data: %v", err)

@@ -133,6 +133,8 @@ func scheduleNextCheck(payload models.Payload) error {
 		Task:   task,
 	}
 
+	log.Printf("Sending task creation request for game %s to Cloud Tasks queue %s", payload.GameID, queuePath)
+
 	_, err = tasksClient.CreateTask(tasksCtx, req)
 	if err != nil {
 		return fmt.Errorf("failed to create reschedule task: %w", err)

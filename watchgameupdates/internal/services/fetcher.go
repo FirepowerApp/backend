@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 )
 
 type GameDataFetcher interface {
@@ -41,7 +42,13 @@ func (f *HTTPGameDataFetcher) GetColumnValue(statColumn string, records [][]stri
 func (f *HTTPGameDataFetcher) FetchGameData(gameID string) ([][]string, error) {
 	fmt.Printf("Fetching new MP data for GameID: %s\n", gameID)
 
-	url := fmt.Sprintf("https://moneypuck.com/moneypuck/gameData/20242025/%s.csv", gameID)
+	// Get stats API base URL from environment variable
+	statsAPIBaseURL := os.Getenv("STATS_API_BASE_URL")
+	if statsAPIBaseURL == "" {
+		statsAPIBaseURL = "https://moneypuck.com" // Default production URL
+	}
+
+	url := fmt.Sprintf("%s/moneypuck/gameData/20242025/%s.csv", statsAPIBaseURL, gameID)
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Printf("Failed to fetch game data: %v", err)

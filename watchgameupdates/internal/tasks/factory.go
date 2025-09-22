@@ -4,7 +4,6 @@ package tasks
 import (
 	"context"
 	"log"
-	"os"
 	"watchgameupdates/config"
 
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
@@ -17,7 +16,7 @@ func NewCloudTasksClient(ctx context.Context, cfg *config.Config) (CloudTasksCli
 		log.Printf("Using local Cloud Tasks emulator at %s", cfg.CloudTasksAddress)
 		// Connect to emulator using plaintext (no TLS)
 		conn, err := grpc.Dial(
-			os.Getenv("CLOUD_TASKS_EMULATOR_HOST"),
+			cfg.CloudTasksAddress,
 			grpc.WithInsecure(),
 		)
 		if err != nil {

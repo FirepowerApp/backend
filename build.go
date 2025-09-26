@@ -31,11 +31,23 @@ var buildTargets = map[string]BuildTarget{
 		BinaryName:  "watchgameupdates",
 		Description: "Main game updates watcher service",
 	},
+	"localCloudTasksTest": {
+		Name:        "localCloudTasksTest",
+		SourcePath:  "./localCloudTasksTest",
+		BinaryName:  "localCloudTasksTest",
+		Description: "Local Cloud Tasks test client for testing task queue functionality",
+	},
+	"schedulegametrackers": {
+		Name:        "schedulegametrackers",
+		SourcePath:  "./scheduleGameTrackers/cmd/schedulegametrackers",
+		BinaryName:  "schedulegametrackers",
+		Description: "NHL game tracker scheduler that creates Cloud Tasks for game monitoring",
+	},
 }
 
 func main() {
 	var (
-		target = flag.String("target", "", "Target to build (testserver, watchgameupdates)")
+		target = flag.String("target", "", "Target to build (testserver, watchgameupdates, localCloudTasksTest)")
 		list   = flag.Bool("list", false, "List available build targets")
 		all    = flag.Bool("all", false, "Build all available targets")
 	)
@@ -147,20 +159,28 @@ func buildTarget(targetName, binDir string) bool {
 		return false
 	}
 
-	// Get the module directory (parent of source path)
-	moduleDir := filepath.Dir(filepath.Dir(absSourcePath)) // Go up two levels from cmd/binary to module root
+	// Handle different directory structures
+	var moduleDir string
+	var relativePath string
 
-	// Build command with module-relative path
-	relativePath := "./" + filepath.Join("cmd", target.BinaryName)
+	if target.Name == "localCloudTasksTest" {
+		// For localCloudTasksTest, main.go is directly in the module root
+		moduleDir = absSourcePath // Use the localCloudTasksTest directory directly
+		relativePath = "./main.go"
+	} else {
+		// For standard cmd structure
+		moduleDir = filepath.Dir(filepath.Dir(absSourcePath)) // Go up two levels from cmd/binary to module root
+		relativePath = "./" + filepath.Join("cmd", target.BinaryName)
+	}
+
 	cmd := exec.Command("go", "build", "-o", absOutputPath, relativePath)
 
 	// Set working directory to the module directory
 	cmd.Dir = moduleDir
 
-	// Set environment variables for cross-compilation if needed
+	// Set environment variables for local builds
 	cmd.Env = append(os.Environ(),
 		"CGO_ENABLED=0",
-		"GOOS=linux",
 	)
 
 	// Run the build

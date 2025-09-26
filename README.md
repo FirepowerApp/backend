@@ -90,8 +90,13 @@ If you prefer to set up components manually:
 
 2. **Build services:**
    ```bash
-   cd watchgameupdates && go build -o watchgameupdates ./cmd/watchgameupdates/ && cd ..
-   cd localCloudTasksTest && go build -o localCloudTasksTest . && cd ..
+   # Use the build system instead
+   go run build.go -target watchgameupdates
+   go run build.go -target localCloudTasksTest
+   go run build.go -target schedulegametrackers
+
+   # Or build all at once
+   go run build.go -all
    ```
 
 3. **Set up Docker environment:**
@@ -167,9 +172,40 @@ cd localCloudTasksTest
 
 The project now includes a comprehensive test mode that simulates NHL and MoneyPuck APIs locally, allowing for complete end-to-end testing without external dependencies.
 
-#### Quick Test Mode Setup
+#### Automated Docker Test (Recommended)
 
-The following script is the current primary single command test execution:
+For a complete containerized test that mirrors your original workflow:
+
+```bash
+./scripts/run_automated_test.sh
+```
+
+**What this script does:**
+1. **Cleanup**: Removes any existing containers that might conflict
+2. **Build & Run**: Builds and starts all required containers:
+   - Backend watchgameupdates service (port 8080)
+   - Testserver with docker-compose (provides mock game data)
+   - Cloud tasks emulator (ghcr.io/aertje/cloud-tasks-emulator:latest)
+3. **Test Initiation**: Runs the local cloud tasks test program to trigger the test sequence
+4. **Monitoring**: Watches backend logs for the completion signal: `"Last play type: game-end, Should reschedule: false"`
+5. **Cleanup**: Stops all containers once testing is complete (containers are preserved for log inspection)
+
+**Features:**
+- Runs silently without displaying container logs during execution
+- Provides colored status updates throughout the process
+- Includes timeout protection (5-minute maximum)
+- Preserves containers for post-test log inspection
+- Handles errors gracefully with proper cleanup
+
+**After automated testing:**
+- Containers are stopped but not deleted for inspection
+- Check backend logs: `docker logs watchgameupdates`
+- Check testserver logs: `docker-compose -f testserver/docker-compose.yml logs`
+- Clean up: `docker rm watchgameupdates cloudtasks-emulator && docker-compose -f testserver/docker-compose.yml rm -f`
+
+#### Quick Test Mode Setup (Alternative)
+
+The following script is an alternative single command test execution:
 
 ```bash
 ./scripts/run_full_test.sh
@@ -209,19 +245,18 @@ This script will:
 
 #### Manual Test Mode
 
-To enable test mode manually:
+To run the original manual workflow (now automated by the script above):
 
 ```bash
-
 # Build and run backend using Docker
-docker -t watchgameupdates watchgameupdates/
+docker build -t watchgameupdates watchgameupdates/
 docker run -p 8080:8080 --name watchgameupdates --network net --env-file watchgameupdates/.env watchgameupdates
 
 # Build and run test server
 cd testserver/ && docker-compose up --build -d
 
-# Build and run cloud task emulator (assuming cloud task emulator container exists)
-docker run -it --name cloudtasks-emulator -p 8080:8080 cloudtasks-emulator
+# Build and run cloud task emulator
+docker run -it --name cloudtasks-emulator -p 8123:8123 ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0
 
 # Initiate monitoring a fake game
 ./localCloudTasksTest/localCloudTasksTest
@@ -317,8 +352,43 @@ docker network rm net
 
 1. **Go version errors**: Ensure you have Go 1.23.3 or later installed
 2. **Docker not running**: Start Docker Desktop or Docker daemon
-3. **Port conflicts**: Ensure ports 8080 and 8123 are available
-4. **Container startup failures**: Check Docker logs: `docker logs sendgameupdates`
+3. **Port conflicts**: Ensure ports 8080, 8123, 8124, and 8125 are available
+4. **Container startup failures**: Check Docker logs: `docker logs watchgameupdates`
+
+### Automated Test Script Issues
+
+1. **Script fails with permission denied**:
+   ```bash
+   chmod +x scripts/run_automated_test.sh
+   ```
+
+2. **Test times out after 5 minutes**:
+   - Check if all containers started properly: `docker ps`
+   - Inspect backend logs: `docker logs watchgameupdates`
+   - Verify testserver is responding: `curl http://localhost:8125/v1/gamecenter/test/play-by-play`
+
+3. **Port conflicts during automated testing**:
+   - Ensure no other services are running on ports 8080, 8123, 8124, 8125
+   - The script attempts to clean up existing containers automatically
+
+4. **Network issues**:
+   - The script creates a Docker network named 'net' if it doesn't exist
+   - If you encounter network conflicts, manually clean up: `docker network rm net`
+
+5. **Container inspection after testing**:
+   ```bash
+   # View all containers (running and stopped)
+   docker ps -a
+
+   # Check backend logs
+   docker logs watchgameupdates
+
+   # Check testserver logs
+   docker-compose -f testserver/docker-compose.yml logs
+
+   # Access container shell for debugging
+   docker exec -it watchgameupdates /bin/sh
+   ```
 
 ### Debugging
 

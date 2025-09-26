@@ -19,8 +19,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 	fetcher := &services.HTTPGameDataFetcher{}
 
+	// Initialize the notifier - you can easily swap this for a different implementation
+	notifier, err := handlers.NewDiscordNotifier()
+	if err != nil {
+		log.Printf("Failed to create notifier: %v", err)
+		// Continue without notifications rather than failing
+		notifier = nil
+	}
+
 	// Call the handler
-	handlers.WatchGameUpdatesHandler(w, r, fetcher, recomputeTypes)
+	handlers.WatchGameUpdatesHandler(w, r, fetcher, recomputeTypes, notifier)
 }
 
 func main() {

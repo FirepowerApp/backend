@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher services.GameDataFetcher, recomputeTypes map[string]struct{}) {
+func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher services.GameDataFetcher, recomputeTypes map[string]struct{}, notifier Notifier) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -61,12 +61,22 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 		}
 		homeTeamExpectedGoals, err = fetcher.GetColumnValue("homeTeamExpectedGoals", records)
 		awayTeamExpectedGoals, err = fetcher.GetColumnValue("awayTeamExpectedGoals", records)
-	}
 
-	if homeTeamExpectedGoals != "" || awayTeamExpectedGoals != "" {
-		log.Printf("Got new values for GameID: %s, Home Team Expected Goals: %s, Away Team Expected Goals: %s", payload.GameID, homeTeamExpectedGoals, awayTeamExpectedGoals)
+		if homeTeamExpectedGoals != "" || awayTeamExpectedGoals != "" {
+			log.Printf("Got new values for GameID: %s, Home Team Expected Goals: %s, Away Team Expected Goals: %s", payload.GameID, homeTeamExpectedGoals, awayTeamExpectedGoals)
 
-		// Send firebase message
+			// Extract team names for the notification
+			homeTeam, awayTeam, err := fetcher.GetTeamNames(records)
+			if err != nil {
+				log.Printf("Failed to extract team names: %v", err)
+				// Continue with generic team names
+				homeTeam = "Home Team"
+				awayTeam = "Away Team"
+			}
+
+			// Send notification using the provided notifier
+			sendExpectedGoalsNotification(notifier, homeTeam, awayTeam, homeTeamExpectedGoals, awayTeamExpectedGoals)
+		}
 	}
 
 	shouldReschedule := services.ShouldReschedule(payload, lastPlay)

@@ -11,6 +11,7 @@ import (
 type GameDataFetcher interface {
 	FetchGameData(gameID string) ([][]string, error)
 	GetColumnValue(statColumn string, records [][]string) (string, error)
+	GetTeamNames(records [][]string) (homeTeam, awayTeam string, err error)
 }
 
 type HTTPGameDataFetcher struct{}
@@ -37,6 +38,48 @@ func (f *HTTPGameDataFetcher) GetColumnValue(statColumn string, records [][]stri
 	fmt.Printf("Stat column value: %s\n", lastRow[statIdx])
 
 	return lastRow[statIdx], nil
+}
+
+func (f *HTTPGameDataFetcher) GetTeamNames(records [][]string) (homeTeam, awayTeam string, err error) {
+	if len(records) < 2 {
+		return "", "", fmt.Errorf("insufficient data to extract team names")
+	}
+
+	header := records[0]
+	lastRow := records[len(records)-1]
+
+	// Find the indexes of the team columns
+	var homeTeamIdx, awayTeamIdx int = -1, -1
+	for i, col := range header {
+		if col == "team" {
+			homeTeamIdx = i
+		} else if col == "opposingTeam" {
+			awayTeamIdx = i
+		}
+	}
+
+	// If we can't find team/opposingTeam columns, try homeTeam/awayTeam
+	if homeTeamIdx == -1 || awayTeamIdx == -1 {
+		for i, col := range header {
+			if col == "homeTeam" {
+				homeTeamIdx = i
+			} else if col == "awayTeam" {
+				awayTeamIdx = i
+			}
+		}
+	}
+
+	if homeTeamIdx == -1 || awayTeamIdx == -1 {
+		// If we still can't find team columns, log available columns for debugging
+		log.Printf("Available columns: %v", header)
+		return "", "", fmt.Errorf("could not find team name columns in CSV data")
+	}
+
+	homeTeam = lastRow[homeTeamIdx]
+	awayTeam = lastRow[awayTeamIdx]
+
+	log.Printf("Extracted team names - Home: %s, Away: %s", homeTeam, awayTeam)
+	return homeTeam, awayTeam, nil
 }
 
 func (f *HTTPGameDataFetcher) FetchGameData(gameID string) ([][]string, error) {

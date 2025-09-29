@@ -11,8 +11,10 @@
 # 5. Cleaning up containers after test completion
 #
 # Usage:
-#   ./scripts/run_automated_test.sh                 # Full test execution
-#   ./scripts/run_automated_test.sh --containers-only  # Start containers only
+#   ./scripts/run_automated_test.sh                    # Full test execution (uses .env.local)
+#   ./scripts/run_automated_test.sh --containers-only  # Start containers only (uses .env.local)
+#   ./scripts/run_automated_test.sh --env-home         # Full test execution (uses .env.home)
+#   ./scripts/run_automated_test.sh --containers-only --env-home  # Start containers only (uses .env.home)
 ###############################################################################
 
 set -e  # Exit on any error
@@ -27,7 +29,7 @@ NC='\033[0m' # No Color
 # Container and network names
 BACKEND_CONTAINER="watchgameupdates"
 BACKEND_IMAGE="watchgameupdates"
-TESTSERVER_COMPOSE_DIR="testserver"
+TESTSERVER_CONTAINER="mockdataapi-testserver-1"
 CLOUDTASKS_CONTAINER="cloudtasks-emulator"
 CLOUDTASKS_IMAGE="ghcr.io/aertje/cloud-tasks-emulator:latest"
 NETWORK_NAME="net"
@@ -38,6 +40,7 @@ MAX_WAIT_TIME=900  # Maximum wait time in seconds (15 minutes)
 
 # Script configuration
 CONTAINERS_ONLY=false
+ENV_FILE=".env.local"  # Default environment file
 
 ###############################################################################
 # Helper Functions
@@ -88,19 +91,8 @@ cleanup_container() {
     fi
 }
 
-cleanup_compose_services() {
-    log_info "Stopping testserver docker-compose services..."
-    cd "$TESTSERVER_COMPOSE_DIR"
-    docker-compose down >/dev/null 2>&1 || true
-    cd ..
-    log_success "Testserver services stopped"
-}
-
 cleanup_all() {
     log_info "Cleaning up existing containers and services..."
-
-    # Stop compose services first
-    cleanup_compose_services
 
     # Clean up individual containers
     cleanup_container "$BACKEND_CONTAINER"
@@ -128,30 +120,44 @@ build_and_run_backend() {
     docker build -t "$BACKEND_IMAGE" watchgameupdates/ >/dev/null 2>&1
     log_success "Backend image built"
 
-    log_info "Starting backend container..."
+    log_info "Starting backend container with env file: $ENV_FILE..."
     docker run -d \
         -p 8080:8080 \
         --name "$BACKEND_CONTAINER" \
         --network "$NETWORK_NAME" \
-        --env-file watchgameupdates/.env \
+        --env-file "watchgameupdates/$ENV_FILE" \
         "$BACKEND_IMAGE" >/dev/null 2>&1
     log_success "Backend container started"
 }
 
-build_and_run_testserver() {
-    log_info "Building and starting testserver..."
-    cd "$TESTSERVER_COMPOSE_DIR"
+start_testserver() {
+    log_info "Starting existing testserver container..."
 
-    # Connect testserver to our network
-    export COMPOSE_PROJECT_NAME="crashthecrease"
-    docker-compose up --build -d >/dev/null 2>&1
+    # Check if the mockdataapi container exists
+    if ! container_exists "$TESTSERVER_CONTAINER"; then
+        log_error "Container '$TESTSERVER_CONTAINER' does not exist!"
+        log_error "Please ensure the mockdataapi container is built and available."
+        log_error "Expected container name: $TESTSERVER_CONTAINER"
+        exit 1
+    fi
+
+    # Start the container if it's not running
+    if ! container_running "$TESTSERVER_CONTAINER"; then
+        log_info "Starting container: $TESTSERVER_CONTAINER"
+        if ! docker start "$TESTSERVER_CONTAINER" >/dev/null 2>&1; then
+            log_error "Failed to start container: $TESTSERVER_CONTAINER"
+            exit 1
+        fi
+    else
+        log_info "Container $TESTSERVER_CONTAINER is already running"
+    fi
 
     # Connect testserver container to our main network for inter-container communication
-    docker network connect "$NETWORK_NAME" "crashthecrease_testserver_1" 2>/dev/null || \
-    docker network connect "$NETWORK_NAME" "crashthecrease-testserver-1" 2>/dev/null || \
-    docker network connect "$NETWORK_NAME" "${TESTSERVER_COMPOSE_DIR}_testserver_1" 2>/dev/null || true
+    if ! docker network inspect "$NETWORK_NAME" --format '{{range .Containers}}{{.Name}} {{end}}' | grep -q "$TESTSERVER_CONTAINER"; then
+        log_info "Connecting $TESTSERVER_CONTAINER to network $NETWORK_NAME"
+        docker network connect "$NETWORK_NAME" "$TESTSERVER_CONTAINER" 2>/dev/null || true
+    fi
 
-    cd ..
     log_success "Testserver started"
 }
 
@@ -268,11 +274,6 @@ monitor_backend_logs() {
 stop_all_containers() {
     log_info "Stopping all test containers..."
 
-    # Stop compose services
-    cd "$TESTSERVER_COMPOSE_DIR"
-    docker-compose stop >/dev/null 2>&1 || true
-    cd ..
-
     # Stop individual containers (don't remove them)
     if container_running "$BACKEND_CONTAINER"; then
         docker stop "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
@@ -280,6 +281,11 @@ stop_all_containers() {
 
     if container_running "$CLOUDTASKS_CONTAINER"; then
         docker stop "$CLOUDTASKS_CONTAINER" >/dev/null 2>&1 || true
+    fi
+
+    # Stop testserver container
+    if container_running "$TESTSERVER_CONTAINER"; then
+        docker stop "$TESTSERVER_CONTAINER" >/dev/null 2>&1 || true
     fi
 
     log_success "All containers stopped (containers preserved for inspection)"
@@ -294,6 +300,10 @@ parse_flags() {
         case $1 in
             --containers-only)
                 CONTAINERS_ONLY=true
+                shift
+                ;;
+            --env-home)
+                ENV_FILE=".env.home"
                 shift
                 ;;
             -h|--help)
@@ -314,11 +324,14 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --containers-only    Start containers only and keep running until manually stopped"
+    echo "  --env-home          Use .env.home instead of .env.local for backend container"
     echo "  -h, --help          Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0                      # Run full automated test"
-    echo "  $0 --containers-only   # Start containers and keep running"
+    echo "  $0                              # Run full automated test (uses .env.local)"
+    echo "  $0 --containers-only           # Start containers and keep running (uses .env.local)"
+    echo "  $0 --env-home                  # Run full automated test (uses .env.home)"
+    echo "  $0 --containers-only --env-home # Start containers and keep running (uses .env.home)"
 }
 
 wait_for_interrupt() {
@@ -366,7 +379,7 @@ main() {
 
     # Step 3: Build and start all services
     build_and_run_backend
-    build_and_run_testserver
+    start_testserver
     start_cloudtasks_emulator
 
     # Step 4: Wait for services to be ready
@@ -387,7 +400,7 @@ main() {
             log_error "Test execution failed or timed out"
             log_info "Check container logs for more details:"
             log_info "  Backend: docker logs $BACKEND_CONTAINER"
-            log_info "  Testserver: docker-compose -f testserver/docker-compose.yml logs"
+            log_info "  Testserver: docker logs $TESTSERVER_CONTAINER"
             stop_all_containers
             exit 1
         fi
@@ -407,11 +420,10 @@ main() {
         echo ""
         echo "🔍 Containers are stopped but preserved for inspection:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
-        echo "  • Testserver logs: docker-compose -f testserver/docker-compose.yml logs"
+        echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
         echo ""
         echo "🧹 To clean up containers completely:"
-        echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER"
-        echo "  docker-compose -f testserver/docker-compose.yml rm -f"
+        echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER $TESTSERVER_CONTAINER"
     fi
 }
 
@@ -427,11 +439,10 @@ cleanup_on_interrupt() {
         echo ""
         echo "🔍 To inspect stopped containers:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
-        echo "  • Testserver logs: docker-compose -f testserver/docker-compose.yml logs"
+        echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
         echo ""
         echo "🗑️ To remove containers completely:"
-        echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER"
-        echo "  docker-compose -f testserver/docker-compose.yml rm -f"
+        echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER $TESTSERVER_CONTAINER"
     fi
 
     exit 0

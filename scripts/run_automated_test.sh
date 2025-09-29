@@ -175,20 +175,25 @@ wait_for_services() {
     log_info "Waiting for services to be ready..."
     sleep 5  # Give services time to start up
 
-    # Check if testserver is responding
-    local retries=0
-    local max_retries=30
-    while ! curl -s http://localhost:8125/v1/gamecenter/test/play-by-play >/dev/null 2>&1; do
-        retries=$((retries + 1))
-        if [ $retries -gt $max_retries ]; then
-            log_warning "Testserver health check failed, continuing anyway..."
-            break
-        fi
-        sleep 1
-    done
+    # Check if testserver is responding (only if testserver is expected to be running)
+    if [ "$ENV_FILE" != ".env.home" ]; then
+        local retries=0
+        local max_retries=30
+        while ! curl -s http://localhost:8125/v1/gamecenter/test/play-by-play >/dev/null 2>&1; do
+            retries=$((retries + 1))
+            if [ $retries -gt $max_retries ]; then
+                log_warning "Testserver health check failed, continuing anyway..."
+                break
+            fi
+            sleep 1
+        done
+    else
+        log_info "Skipping testserver health check (using live APIs)"
+    fi
 
     # Check if backend is responding (expect 400/405 for GET request)
-    retries=0
+    local retries=0
+    local max_retries=30
     while true; do
         http_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 2>/dev/null || echo "000")
         if [ "$http_code" = "400" ] || [ "$http_code" = "405" ] || [ "$http_code" = "200" ]; then
@@ -338,7 +343,9 @@ wait_for_interrupt() {
     log_info "Containers are running and ready for use"
     log_info "Services available at:"
     log_info "  • Backend: http://localhost:8080"
-    log_info "  • Testserver: http://localhost:8125"
+    if [ "$ENV_FILE" != ".env.home" ]; then
+        log_info "  • Testserver: http://localhost:8125"
+    fi
     log_info "  • Cloud Tasks Emulator: http://localhost:8123"
     echo ""
     log_info "Press Ctrl+C to stop all containers and exit..."
@@ -379,7 +386,14 @@ main() {
 
     # Step 3: Build and start all services
     build_and_run_backend
-    start_testserver
+
+    # Only start testserver if not using home environment (which uses live APIs)
+    if [ "$ENV_FILE" != ".env.home" ]; then
+        start_testserver
+    else
+        log_info "Skipping testserver (using live APIs with .env.home)"
+    fi
+
     start_cloudtasks_emulator
 
     # Step 4: Wait for services to be ready
@@ -413,17 +427,27 @@ main() {
         echo ""
         echo "📋 What was tested:"
         echo "  ✓ Backend container built and started"
-        echo "  ✓ Testserver provided mock NHL and MoneyPuck API data"
+        if [ "$ENV_FILE" != ".env.home" ]; then
+            echo "  ✓ Testserver provided mock NHL and MoneyPuck API data"
+        else
+            echo "  ✓ Backend used live NHL and MoneyPuck API data"
+        fi
         echo "  ✓ Cloud tasks emulator handled task scheduling"
         echo "  ✓ Test sequence initiated and completed successfully"
         echo "  ✓ Backend processed all game events until completion"
         echo ""
         echo "🔍 Containers are stopped but preserved for inspection:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
-        echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
+        if [ "$ENV_FILE" != ".env.home" ]; then
+            echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
+        fi
         echo ""
         echo "🧹 To clean up containers completely:"
-        echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER $TESTSERVER_CONTAINER"
+        if [ "$ENV_FILE" != ".env.home" ]; then
+            echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER $TESTSERVER_CONTAINER"
+        else
+            echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER"
+        fi
     fi
 }
 

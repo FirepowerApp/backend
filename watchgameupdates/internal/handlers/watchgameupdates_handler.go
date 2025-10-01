@@ -58,8 +58,8 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 			log.Printf("Failed to fetch game data: %v", err)
 			// http.Error(w, "Failed to fetch game data", http.StatusInternalServerError)
 			// return
-			homeTeamExpectedGoals = "No data"
-			awayTeamExpectedGoals = "No data"
+			homeTeamExpectedGoals = "-1"
+			awayTeamExpectedGoals = "-1"
 		} else {
 			homeTeamExpectedGoals, err = fetcher.GetColumnValue("homeTeamExpectedGoals", records)
 			awayTeamExpectedGoals, err = fetcher.GetColumnValue("awayTeamExpectedGoals", records)

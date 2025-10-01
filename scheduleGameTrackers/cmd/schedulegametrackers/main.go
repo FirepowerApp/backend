@@ -231,8 +231,8 @@ func createCloudTask(ctx context.Context, client taskspb.CloudTasksClient, confi
 		targetURL = "http://host.docker.internal:8080"
 	}
 
-	// Schedule task to run 30 minutes before game start
-	scheduleTime := startTime.Add(-30 * time.Minute)
+	// Schedule task to run 5 minutes before game start
+	scheduleTime := startTime.Add(-5 * time.Minute)
 
 	// Create the task request using taskspb format (works for emulator)
 	queuePath := fmt.Sprintf("projects/%s/locations/%s/queues/%s", config.ProjectID, config.Location, config.QueueName)

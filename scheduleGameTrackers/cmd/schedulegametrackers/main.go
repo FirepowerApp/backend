@@ -34,6 +34,7 @@ type Config struct {
 	Teams      []int  // Team IDs to filter games for
 	TestMode   bool   // Whether to run in test mode
 	AllTeams   bool   // Whether to include all teams
+	Today      bool   // Whether to filter for today's upcoming games only
 	Production bool   // Whether to use production task queue
 	ProjectID  string // GCP Project ID
 	Location   string // GCP Location
@@ -46,10 +47,18 @@ type Game struct {
 	GameDate  string `json:"gameDate"`
 	StartTime string `json:"startTimeUTC"`
 	AwayTeam  struct {
-		ID int `json:"id"`
+		ID                       int               `json:"id"`
+		CommonName               map[string]string `json:"commonName"`
+		PlaceName                map[string]string `json:"placeName"`
+		PlaceNameWithPreposition map[string]string `json:"placeNameWithPreposition"`
+		Abbrev                   string            `json:"abbrev"`
 	} `json:"awayTeam"`
 	HomeTeam struct {
-		ID int `json:"id"`
+		ID                       int               `json:"id"`
+		CommonName               map[string]string `json:"commonName"`
+		PlaceName                map[string]string `json:"placeName"`
+		PlaceNameWithPreposition map[string]string `json:"placeNameWithPreposition"`
+		Abbrev                   string            `json:"abbrev"`
 	} `json:"homeTeam"`
 }
 
@@ -61,10 +70,82 @@ type ScheduleResponse struct {
 	} `json:"gameWeek"`
 }
 
-// TaskPayload represents the payload structure for cloud tasks, matching existing system
+// Team represents team information for the task payload
+type Team struct {
+	ID                       int               `json:"id"`
+	CommonName               map[string]string `json:"commonName"`
+	PlaceName                map[string]string `json:"placeName"`
+	PlaceNameWithPreposition map[string]string `json:"placeNameWithPreposition"`
+	Abbrev                   string            `json:"abbrev"`
+}
+
+// GameInfo represents game information for the task payload
+type GameInfo struct {
+	ID        string `json:"id"`
+	GameDate  string `json:"gameDate"`
+	StartTime string `json:"startTimeUTC"`
+	HomeTeam  Team   `json:"homeTeam"`
+	AwayTeam  Team   `json:"awayTeam"`
+}
+
+// TaskPayload represents the payload structure for cloud tasks, matching new system
 type TaskPayload struct {
-	GameID       string  `json:"game_id"`
-	ExecutionEnd *string `json:"execution_end,omitempty"`
+	Game         GameInfo `json:"game"`
+	ExecutionEnd *string  `json:"execution_end,omitempty"`
+}
+
+// cityCodeToTeamID maps NHL team city codes to their corresponding team IDs
+var cityCodeToTeamID = map[string]int{
+	"ANA": 24, // Anaheim Ducks
+	"ARI": 53, // Arizona Coyotes
+	"BOS": 1,  // Boston Bruins
+	"BUF": 7,  // Buffalo Sabres
+	"CAR": 12, // Carolina Hurricanes
+	"CBJ": 29, // Columbus Blue Jackets
+	"CGY": 20, // Calgary Flames
+	"CHI": 16, // Chicago Blackhawks
+	"COL": 21, // Colorado Avalanche
+	"DAL": 25, // Dallas Stars
+	"DET": 17, // Detroit Red Wings
+	"EDM": 22, // Edmonton Oilers
+	"FLA": 13, // Florida Panthers
+	"LAK": 26, // Los Angeles Kings
+	"MIN": 30, // Minnesota Wild
+	"MTL": 8,  // Montreal Canadiens
+	"NJD": 6,  // New Jersey Devils
+	"NSH": 18, // Nashville Predators
+	"NYI": 2,  // New York Islanders
+	"NYR": 3,  // New York Rangers
+	"OTT": 9,  // Ottawa Senators
+	"PHI": 4,  // Philadelphia Flyers
+	"PIT": 5,  // Pittsburgh Penguins
+	"SEA": 55, // Seattle Kraken
+	"SJS": 28, // San Jose Sharks
+	"STL": 19, // St. Louis Blues
+	"TBL": 14, // Tampa Bay Lightning
+	"TOR": 10, // Toronto Maple Leafs
+	"VAN": 23, // Vancouver Canucks
+	"VGK": 54, // Vegas Golden Knights
+	"WPG": 52, // Winnipeg Jets
+	"WSH": 15, // Washington Capitals
+}
+
+// parseTeamIdentifier converts a team identifier (city code or numeric ID) to a team ID
+func parseTeamIdentifier(identifier string) (int, error) {
+	identifier = strings.TrimSpace(strings.ToUpper(identifier))
+
+	// Try to parse as city code first
+	if teamID, exists := cityCodeToTeamID[identifier]; exists {
+		return teamID, nil
+	}
+
+	// Try to parse as numeric ID
+	teamID, err := strconv.Atoi(identifier)
+	if err != nil {
+		return 0, fmt.Errorf("invalid team identifier: %s (use city code like CHI or numeric ID like 16)", identifier)
+	}
+
+	return teamID, nil
 }
 
 // parseFlags parses and validates command-line flags
@@ -73,9 +154,10 @@ func parseFlags() *Config {
 
 	var teamsStr string
 	flag.StringVar(&config.Date, "date", "", "Specific date to query (YYYY-MM-DD format). Defaults to today.")
-	flag.StringVar(&teamsStr, "teams", "", "Comma-separated list of team IDs. Defaults to Dallas Stars (25).")
+	flag.StringVar(&teamsStr, "teams", "", "Comma-separated list of team IDs or city codes (e.g., '25,CHI,DAL'). Defaults to Dallas Stars (25).")
 	flag.BoolVar(&config.TestMode, "test", false, "Run in test mode with predefined game ID")
 	flag.BoolVar(&config.AllTeams, "all", false, "Include all teams playing on the specified date")
+	flag.BoolVar(&config.Today, "today", false, "Filter for today's upcoming games only (overrides -date)")
 	flag.BoolVar(&config.Production, "prod", false, "Send tasks to production queue instead of local emulator")
 	flag.StringVar(&config.ProjectID, "project", "localproject", "GCP Project ID")
 	flag.StringVar(&config.Location, "location", "us-south1", "GCP Location")
@@ -83,8 +165,10 @@ func parseFlags() *Config {
 
 	flag.Parse()
 
-	// Set default date to today if not provided
-	if config.Date == "" {
+	// Handle today flag - overrides date setting
+	if config.Today {
+		config.Date = time.Now().Format("2006-01-02")
+	} else if config.Date == "" {
 		config.Date = time.Now().Format("2006-01-02")
 	}
 
@@ -95,9 +179,9 @@ func parseFlags() *Config {
 		teamStrs := strings.Split(teamsStr, ",")
 		config.Teams = make([]int, len(teamStrs))
 		for i, teamStr := range teamStrs {
-			teamID, err := strconv.Atoi(strings.TrimSpace(teamStr))
+			teamID, err := parseTeamIdentifier(teamStr)
 			if err != nil {
-				log.Fatalf("Invalid team ID: %s", teamStr)
+				log.Fatalf("Invalid team identifier: %s", err)
 			}
 			config.Teams[i] = teamID
 		}
@@ -163,6 +247,28 @@ func filterGamesForTeams(games []Game, teams []int) []Game {
 	return filteredGames
 }
 
+// filterUpcomingGames filters games to include only those that haven't started yet
+func filterUpcomingGames(games []Game) []Game {
+	now := time.Now()
+	var upcomingGames []Game
+
+	for _, game := range games {
+		startTime, err := time.Parse(time.RFC3339, game.StartTime)
+		if err != nil {
+			log.Printf("Warning: Could not parse start time for game %d: %v", game.ID, err)
+			continue
+		}
+
+		// Include games that haven't started yet
+		if startTime.After(now) {
+			upcomingGames = append(upcomingGames, game)
+		}
+	}
+
+	log.Printf("Filtered to %d upcoming games", len(upcomingGames))
+	return upcomingGames
+}
+
 // createTestGame creates a test game with predefined data for testing purposes
 func createTestGame() Game {
 	return Game{
@@ -170,11 +276,31 @@ func createTestGame() Game {
 		GameDate:  time.Now().Format("2006-01-02"),
 		StartTime: time.Now().Format(time.RFC3339),
 		AwayTeam: struct {
-			ID int `json:"id"`
-		}{ID: DefaultTeamID},
+			ID                       int               `json:"id"`
+			CommonName               map[string]string `json:"commonName"`
+			PlaceName                map[string]string `json:"placeName"`
+			PlaceNameWithPreposition map[string]string `json:"placeNameWithPreposition"`
+			Abbrev                   string            `json:"abbrev"`
+		}{
+			ID:                       DefaultTeamID,
+			CommonName:               map[string]string{"default": "Stars"},
+			PlaceName:                map[string]string{"default": "Dallas"},
+			PlaceNameWithPreposition: map[string]string{"default": "Dallas"},
+			Abbrev:                   "DAL",
+		},
 		HomeTeam: struct {
-			ID int `json:"id"`
-		}{ID: 1}, // Boston Bruins
+			ID                       int               `json:"id"`
+			CommonName               map[string]string `json:"commonName"`
+			PlaceName                map[string]string `json:"placeName"`
+			PlaceNameWithPreposition map[string]string `json:"placeNameWithPreposition"`
+			Abbrev                   string            `json:"abbrev"`
+		}{
+			ID:                       1, // Boston Bruins
+			CommonName:               map[string]string{"default": "Bruins"},
+			PlaceName:                map[string]string{"default": "Boston"},
+			PlaceNameWithPreposition: map[string]string{"default": "Boston"},
+			Abbrev:                   "BOS",
+		},
 	}
 }
 
@@ -212,9 +338,27 @@ func createCloudTask(ctx context.Context, client taskspb.CloudTasksClient, confi
 
 	executionEnd := startTime.Add(4 * time.Hour).Format(time.RFC3339)
 
-	// Prepare the task payload matching existing system structure
+	// Prepare the task payload with full game context
 	payload := TaskPayload{
-		GameID:       strconv.Itoa(game.ID),
+		Game: GameInfo{
+			ID:        strconv.Itoa(game.ID),
+			GameDate:  game.GameDate,
+			StartTime: game.StartTime,
+			HomeTeam: Team{
+				ID:                       game.HomeTeam.ID,
+				CommonName:               game.HomeTeam.CommonName,
+				PlaceName:                game.HomeTeam.PlaceName,
+				PlaceNameWithPreposition: game.HomeTeam.PlaceNameWithPreposition,
+				Abbrev:                   game.HomeTeam.Abbrev,
+			},
+			AwayTeam: Team{
+				ID:                       game.AwayTeam.ID,
+				CommonName:               game.AwayTeam.CommonName,
+				PlaceName:                game.AwayTeam.PlaceName,
+				PlaceNameWithPreposition: game.AwayTeam.PlaceNameWithPreposition,
+				Abbrev:                   game.AwayTeam.Abbrev,
+			},
+		},
 		ExecutionEnd: &executionEnd,
 	}
 
@@ -317,8 +461,8 @@ func main() {
 	config := parseFlags()
 
 	log.Printf("Starting NHL Game Tracker Scheduler")
-	log.Printf("Configuration: Date=%s, Teams=%v, TestMode=%t, AllTeams=%t, Production=%t",
-		config.Date, config.Teams, config.TestMode, config.AllTeams, config.Production)
+	log.Printf("Configuration: Date=%s, Teams=%v, TestMode=%t, AllTeams=%t, Today=%t, Production=%t",
+		config.Date, config.Teams, config.TestMode, config.AllTeams, config.Today, config.Production)
 
 	ctx := context.Background()
 
@@ -343,6 +487,11 @@ func main() {
 
 		// Filter games based on team selection
 		games = filterGamesForTeams(fetchedGames, config.Teams)
+
+		// If today flag is set, filter to only upcoming games
+		if config.Today {
+			games = filterUpcomingGames(games)
+		}
 	}
 
 	// Process games and create tasks

@@ -5,7 +5,8 @@ This program fetches NHL game schedules and creates Google Cloud Tasks for game 
 ## Features
 
 - **Automatic Game Detection**: Fetches games for today or a specified date using the NHL API
-- **Team Filtering**: Supports filtering games by specific teams (defaults to Dallas Stars)
+- **Team Filtering**: Supports filtering games by specific teams using city codes (CHI, DAL) or numeric IDs (defaults to Dallas Stars)
+- **Today's Upcoming Games**: New `-today` flag filters to only today's games that haven't started yet
 - **Flexible Scheduling**: Can schedule tasks for future dates
 - **Test Mode**: Includes a test mode with predefined game data for development
 - **Production Support**: Configurable for both local development and production environments
@@ -23,7 +24,8 @@ Run with default settings (Dallas Stars games for today, local task queue):
 ### Command Line Options
 
 - `-date YYYY-MM-DD`: Specify a future date to query (default: today)
-- `-teams ID1,ID2,ID3`: Comma-separated list of NHL team IDs to filter for
+- `-teams ID1,ID2,ID3`: Comma-separated list of NHL team IDs or city codes to filter for (supports both formats)
+- `-today`: Filter for today's upcoming games only (overrides -date)
 - `-all`: Include all teams playing on the specified date
 - `-test`: Run in test mode with predefined game data
 - `-prod`: Send tasks to production queue instead of local emulator
@@ -38,9 +40,19 @@ Run with default settings (Dallas Stars games for today, local task queue):
 ./schedulegametrackers
 ```
 
-**Get games for specific teams on a future date**:
+**Get today's upcoming games for Chicago Blackhawks**:
 ```bash
-./schedulegametrackers -date 2024-03-15 -teams 25,1,24
+./schedulegametrackers -today -teams CHI
+```
+
+**Get today's upcoming games for multiple teams using city codes**:
+```bash
+./schedulegametrackers -today -teams CHI,DAL,BOS
+```
+
+**Get games for specific teams on a future date (mixing city codes and IDs)**:
+```bash
+./schedulegametrackers -date 2024-03-15 -teams CHI,25,1
 ```
 
 **Get all games for tomorrow**:
@@ -58,17 +70,53 @@ Run with default settings (Dallas Stars games for today, local task queue):
 ./schedulegametrackers -prod -date 2024-03-20
 ```
 
-## NHL Team IDs
+## NHL Team IDs and City Codes
 
-Some common NHL team IDs:
-- Dallas Stars: 25
-- Boston Bruins: 1
-- Toronto Maple Leafs: 10
-- New York Rangers: 3
-- Chicago Blackhawks: 16
-- Detroit Red Wings: 17
+The program now supports both numeric team IDs and city codes for team filtering:
 
-For a complete list, refer to the NHL API documentation.
+### Common Teams (City Code - Team ID - Team Name):
+- **CHI - 16** - Chicago Blackhawks
+- **DAL - 25** - Dallas Stars
+- **BOS - 1** - Boston Bruins
+- **TOR - 10** - Toronto Maple Leafs
+- **NYR - 3** - New York Rangers
+- **DET - 17** - Detroit Red Wings
+
+### All Supported City Codes:
+- **ANA** (24) - Anaheim Ducks
+- **ARI** (53) - Arizona Coyotes
+- **BOS** (1) - Boston Bruins
+- **BUF** (7) - Buffalo Sabres
+- **CAR** (12) - Carolina Hurricanes
+- **CBJ** (29) - Columbus Blue Jackets
+- **CGY** (20) - Calgary Flames
+- **CHI** (16) - Chicago Blackhawks
+- **COL** (21) - Colorado Avalanche
+- **DAL** (25) - Dallas Stars
+- **DET** (17) - Detroit Red Wings
+- **EDM** (22) - Edmonton Oilers
+- **FLA** (13) - Florida Panthers
+- **LAK** (26) - Los Angeles Kings
+- **MIN** (30) - Minnesota Wild
+- **MTL** (8) - Montreal Canadiens
+- **NJD** (6) - New Jersey Devils
+- **NSH** (18) - Nashville Predators
+- **NYI** (2) - New York Islanders
+- **NYR** (3) - New York Rangers
+- **OTT** (9) - Ottawa Senators
+- **PHI** (4) - Philadelphia Flyers
+- **PIT** (5) - Pittsburgh Penguins
+- **SEA** (55) - Seattle Kraken
+- **SJS** (28) - San Jose Sharks
+- **STL** (19) - St. Louis Blues
+- **TBL** (14) - Tampa Bay Lightning
+- **TOR** (10) - Toronto Maple Leafs
+- **VAN** (23) - Vancouver Canucks
+- **VGK** (54) - Vegas Golden Knights
+- **WPG** (52) - Winnipeg Jets
+- **WSH** (15) - Washington Capitals
+
+You can use either format: `-teams CHI,DAL` or `-teams 16,25` or mix them: `-teams CHI,25,BOS`
 
 ## Task Scheduling
 

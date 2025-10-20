@@ -48,37 +48,60 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 		log.Println("Max execution time not set, proceeding without time check.")
 	}
 
-	lastPlay := services.FetchPlayByPlay(payload.GameID)
+	lastPlay := services.FetchPlayByPlay(payload.Game.ID)
 	homeTeamExpectedGoals := ""
 	awayTeamExpectedGoals := ""
 
 	if _, ok := recomputeTypes[lastPlay.TypeDescKey]; ok {
-		records, err := fetcher.FetchGameData(payload.GameID)
+		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlay.TypeDescKey, payload.Game.ID)
+
+		records, err := fetcher.FetchGameData(payload.Game.ID)
 		if err != nil {
-			log.Printf("Failed to fetch game data: %v", err)
-			// http.Error(w, "Failed to fetch game data", http.StatusInternalServerError)
-			// return
+			log.Printf("ERROR: Failed to fetch MoneyPuck data for game %s: %v", payload.Game.ID, err)
 			homeTeamExpectedGoals = "-1"
 			awayTeamExpectedGoals = "-1"
 		} else {
+			// Log CSV structure for debugging
+			if len(records) > 0 {
+				log.Printf("MoneyPuck CSV structure - Columns: %d, Rows: %d", len(records[0]), len(records))
+				log.Printf("Available columns: %v", records[0])
+				if len(records) > 1 {
+					log.Printf("Sample data row: %v", records[len(records)-1])
+				}
+			} else {
+				log.Printf("WARNING: No data rows returned from MoneyPuck for game %s", payload.Game.ID)
+			}
+
 			homeTeamExpectedGoals, err = fetcher.GetColumnValue("homeTeamExpectedGoals", records)
+			if err != nil {
+				log.Printf("WARNING: Could not extract homeTeamExpectedGoals: %v", err)
+			}
+
 			awayTeamExpectedGoals, err = fetcher.GetColumnValue("awayTeamExpectedGoals", records)
+			if err != nil {
+				log.Printf("WARNING: Could not extract awayTeamExpectedGoals: %v", err)
+			}
 		}
 
 		if homeTeamExpectedGoals != "" || awayTeamExpectedGoals != "" {
-			log.Printf("Got new values for GameID: %s, Home Team Expected Goals: %s, Away Team Expected Goals: %s", payload.GameID, homeTeamExpectedGoals, awayTeamExpectedGoals)
+			log.Printf("Got new values for GameID: %s, Home Team Expected Goals: %s, Away Team Expected Goals: %s", payload.Game.ID, homeTeamExpectedGoals, awayTeamExpectedGoals)
 
-			// Extract team names for the notification
-			homeTeam, awayTeam, err := fetcher.GetTeamNames(records)
-			if err != nil {
-				log.Printf("Failed to extract team names: %v", err)
-				// Continue with generic team names
+			// Get team names from the payload instead of trying to extract from MoneyPuck data
+			homeTeam := payload.Game.HomeTeam.CommonName["default"]
+			awayTeam := payload.Game.AwayTeam.CommonName["default"]
+			if homeTeam == "" {
 				homeTeam = "Home Team"
+			}
+			if awayTeam == "" {
 				awayTeam = "Away Team"
 			}
 
+			// Extract current scores from MoneyPuck data
+			homeTeamGoals, _ := fetcher.GetColumnValue("homeTeamGoals", records)
+			awayTeamGoals, _ := fetcher.GetColumnValue("awayTeamGoals", records)
+
 			// Send notification using the provided notifier
-			sendExpectedGoalsNotification(notifier, homeTeam, awayTeam, homeTeamExpectedGoals, awayTeamExpectedGoals)
+			sendExpectedGoalsNotification(notifier, homeTeam, awayTeam, homeTeamExpectedGoals, awayTeamExpectedGoals, homeTeamGoals, awayTeamGoals)
 		}
 	}
 
@@ -122,9 +145,9 @@ func scheduleNextCheck(payload models.Payload) error {
 	queuePath := fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queueName)
 
 	if payload.ExecutionEnd != nil {
-		log.Printf("Max execution time for game %s is set to %s", payload.GameID, *payload.ExecutionEnd)
+		log.Printf("Max execution time for game %s is set to %s", payload.Game.ID, *payload.ExecutionEnd)
 	} else {
-		log.Printf("Max execution time for game %s is not set", payload.GameID)
+		log.Printf("Max execution time for game %s is not set", payload.Game.ID)
 	}
 
 	task := &taskspb.Task{
@@ -146,13 +169,13 @@ func scheduleNextCheck(payload models.Payload) error {
 		Task:   task,
 	}
 
-	log.Printf("Sending task creation request for game %s to Cloud Tasks queue %s", payload.GameID, queuePath)
+	log.Printf("Sending task creation request for game %s to Cloud Tasks queue %s", payload.Game.ID, queuePath)
 
 	_, err = tasksClient.CreateTask(tasksCtx, req)
 	if err != nil {
 		return fmt.Errorf("failed to create reschedule task: %w", err)
 	}
 
-	log.Printf("Successfully scheduled next check task for game %s at %v", payload.GameID, scheduleTime.AsTime().Format(time.RFC3339))
+	log.Printf("Successfully scheduled next check task for game %s at %v", payload.Game.ID, scheduleTime.AsTime().Format(time.RFC3339))
 	return nil
 }

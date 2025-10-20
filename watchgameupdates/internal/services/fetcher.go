@@ -17,27 +17,39 @@ type GameDataFetcher interface {
 type HTTPGameDataFetcher struct{}
 
 func (f *HTTPGameDataFetcher) GetColumnValue(statColumn string, records [][]string) (string, error) {
+	if len(records) == 0 {
+		return "", fmt.Errorf("no data records provided")
+	}
+
 	header := records[0]
 	lastRow := records[len(records)-1]
 
-	// Find the indexes of the target columns
+	// Find the index of the target column
 	var statIdx int = -1
 	for i, col := range header {
 		if col == statColumn {
 			statIdx = i
+			break
 		}
 	}
 
-	// Validate that both columns were found
+	// Validate that the column was found
 	if statIdx == -1 {
-		log.Printf("Could not find column: %s\n", statColumn)
-		return "", fmt.Errorf("could not find one or both columns: homeTeamExpectedGoals, awayTeamExpectedGoals")
+		log.Printf("WARNING: Column '%s' not found in CSV data", statColumn)
+		log.Printf("DEBUG: Available columns: %v", header)
+		return "", fmt.Errorf("column '%s' not found in CSV data", statColumn)
 	}
 
-	// Print the values from the last row
-	fmt.Printf("Stat column value: %s\n", lastRow[statIdx])
+	// Validate index bounds
+	if statIdx >= len(lastRow) {
+		log.Printf("ERROR: Column index %d out of bounds for row with %d columns", statIdx, len(lastRow))
+		return "", fmt.Errorf("column index out of bounds")
+	}
 
-	return lastRow[statIdx], nil
+	value := lastRow[statIdx]
+	log.Printf("INFO: Extracted column '%s' value: %s (from row %d of %d)", statColumn, value, len(records), len(records))
+
+	return value, nil
 }
 
 func (f *HTTPGameDataFetcher) GetTeamNames(records [][]string) (homeTeam, awayTeam string, err error) {
@@ -83,7 +95,7 @@ func (f *HTTPGameDataFetcher) GetTeamNames(records [][]string) (homeTeam, awayTe
 }
 
 func (f *HTTPGameDataFetcher) FetchGameData(gameID string) ([][]string, error) {
-	fmt.Printf("Fetching new MP data for GameID: %s\n", gameID)
+	log.Printf("INFO: Fetching MoneyPuck data for game %s", gameID)
 
 	// Get stats API base URL from environment variable
 	statsAPIBaseURL := os.Getenv("STATS_API_BASE_URL")
@@ -91,26 +103,30 @@ func (f *HTTPGameDataFetcher) FetchGameData(gameID string) ([][]string, error) {
 		statsAPIBaseURL = "https://moneypuck.com" // Default production URL
 	}
 
-	url := fmt.Sprintf("%s/moneypuck/gameData/20242025/%s.csv", statsAPIBaseURL, gameID)
+	url := fmt.Sprintf("%s/moneypuck/gameData/20252026/%s.csv", statsAPIBaseURL, gameID)
+	log.Printf("DEBUG: Requesting URL: %s", url)
+
 	resp, err := http.Get(url)
 	if err != nil {
-		log.Printf("Failed to fetch game data: %v", err)
+		log.Printf("ERROR: HTTP request failed for game %s: %v", gameID, err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to fetch game data, status code: %d", resp.StatusCode)
+		log.Printf("ERROR: MoneyPuck API returned status %d for game %s", resp.StatusCode, gameID)
 		return nil, fmt.Errorf("failed to fetch game data, status code: %d", resp.StatusCode)
 	}
 
+	log.Printf("INFO: Successfully received MoneyPuck data for game %s", gameID)
 	reader := csv.NewReader(resp.Body)
 
 	records, err := reader.ReadAll()
 	if err != nil {
-		log.Printf("Failed to read CSV data: %v", err)
+		log.Printf("ERROR: Failed to parse CSV data for game %s: %v", gameID, err)
 		return nil, err
 	}
 
+	log.Printf("INFO: Successfully parsed CSV data for game %s - %d total records", gameID, len(records))
 	return records, nil
 }

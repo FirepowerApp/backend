@@ -116,17 +116,25 @@ func (d *DiscordNotifier) SendNotification(ctx context.Context, req Notification
 func (d *DiscordNotifier) formatMessage(req NotificationRequest) string {
 	message := ""
 
-	if len(req.Data) > 0 {
-		message += "📊 **Expected Goals Data:**\n"
-		for key, value := range req.Data {
-			// Format the value appropriately
-			if value == float64(int64(value)) {
-				// Display as integer if it's a whole number
-				message += "• **" + formatKey(key) + ":** " + strconv.FormatInt(int64(value), 10) + "\n"
-			} else {
-				// Display with 3 decimal places for expected goals
-				message += "• **" + formatKey(key) + ":** " + strconv.FormatFloat(value, 'f', 3, 64) + "\n"
-			}
+	// Extract scores and expected goals for better formatting
+	homeGoals, hasHomeGoals := req.Data["homeTeamGoals"]
+	awayGoals, hasAwayGoals := req.Data["awayTeamGoals"]
+	homeXG, hasHomeXG := req.Data["homeTeamExpectedGoals"]
+	awayXG, hasAwayXG := req.Data["awayTeamExpectedGoals"]
+
+	// Show current score if available
+	if hasHomeGoals && hasAwayGoals {
+		message += "🏒 Current Score: " + req.Team1ID + " " + strconv.FormatInt(int64(homeGoals), 10) + " - " + strconv.FormatInt(int64(awayGoals), 10) + " " + req.Team2ID + "\n\n"
+	}
+
+	// Show expected goals if available
+	if hasHomeXG || hasAwayXG {
+		message += "📊 Expected Goals:\n"
+		if hasHomeXG {
+			message += "• " + req.Team1ID + ": " + strconv.FormatFloat(homeXG, 'f', 3, 64) + "\n"
+		}
+		if hasAwayXG {
+			message += "• " + req.Team2ID + ": " + strconv.FormatFloat(awayXG, 'f', 3, 64) + "\n"
 		}
 	}
 
@@ -141,6 +149,10 @@ func formatKey(key string) string {
 		return "Home Team Expected Goals"
 	case "awayTeamExpectedGoals":
 		return "Away Team Expected Goals"
+	case "homeTeamGoals":
+		return "Home Team Goals"
+	case "awayTeamGoals":
+		return "Away Team Goals"
 	default:
 		return key
 	}
@@ -155,13 +167,13 @@ func (d *DiscordNotifier) Close() error {
 }
 
 // sendExpectedGoalsNotification uses the provided notifier to send expected goals notifications
-func sendExpectedGoalsNotification(notifier Notifier, homeTeam, awayTeam, homeExpectedGoals, awayExpectedGoals string) {
+func sendExpectedGoalsNotification(notifier Notifier, homeTeam, awayTeam, homeExpectedGoals, awayExpectedGoals, homeGoals, awayGoals string) {
 	if notifier == nil {
 		log.Printf("No notifier provided, skipping notification")
 		return
 	}
 
-	// Parse expected goals values
+	// Parse expected goals and current score values
 	data := make(map[string]float64)
 
 	if homeExpectedGoals != "" {
@@ -176,8 +188,21 @@ func sendExpectedGoalsNotification(notifier Notifier, homeTeam, awayTeam, homeEx
 		}
 	}
 
+	// Add current scores if available
+	if homeGoals != "" {
+		if homeGoalsVal, err := strconv.ParseFloat(homeGoals, 64); err == nil {
+			data["homeTeamGoals"] = homeGoalsVal
+		}
+	}
+
+	if awayGoals != "" {
+		if awayGoalsVal, err := strconv.ParseFloat(awayGoals, 64); err == nil {
+			data["awayTeamGoals"] = awayGoalsVal
+		}
+	}
+
 	if len(data) == 0 {
-		log.Printf("No valid expected goals data to send notification for")
+		log.Printf("No valid data to send notification for")
 		return
 	}
 

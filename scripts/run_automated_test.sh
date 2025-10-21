@@ -94,11 +94,10 @@ cleanup_container() {
 cleanup_all() {
     log_info "Cleaning up existing containers and services..."
 
-    # Clean up individual containers
+    # Clean up individual containers (leave cloud tasks emulator running)
     cleanup_container "$BACKEND_CONTAINER"
-    cleanup_container "$CLOUDTASKS_CONTAINER"
 
-    log_success "All containers cleaned up"
+    log_success "Backend containers cleaned up (cloud tasks emulator preserved)"
 }
 
 ###############################################################################
@@ -162,13 +161,51 @@ start_testserver() {
 }
 
 start_cloudtasks_emulator() {
-    log_info "Starting cloud tasks emulator..."
-    docker run -d \
-        --name "$CLOUDTASKS_CONTAINER" \
-        --network "$NETWORK_NAME" \
-        -p 8123:8123 \
-        "$CLOUDTASKS_IMAGE" --host=0.0.0.0 >/dev/null 2>&1
-    log_success "Cloud tasks emulator started"
+    if container_running "$CLOUDTASKS_CONTAINER"; then
+        log_info "Cloud tasks emulator is already running, skipping startup"
+
+        # Ensure the emulator is connected to our network
+        if ! docker network inspect "$NETWORK_NAME" --format '{{range .Containers}}{{.Name}} {{end}}' | grep -q "$CLOUDTASKS_CONTAINER"; then
+            log_info "Connecting $CLOUDTASKS_CONTAINER to network $NETWORK_NAME"
+            docker network connect "$NETWORK_NAME" "$CLOUDTASKS_CONTAINER" 2>/dev/null || true
+        fi
+
+        log_success "Using existing cloud tasks emulator"
+    else
+        # Check if container exists but is stopped
+        if container_exists "$CLOUDTASKS_CONTAINER"; then
+            log_info "Cloud tasks emulator container exists but is stopped, starting it..."
+            if docker start "$CLOUDTASKS_CONTAINER" >/dev/null 2>&1; then
+                # Ensure it's connected to our network
+                if ! docker network inspect "$NETWORK_NAME" --format '{{range .Containers}}{{.Name}} {{end}}' | grep -q "$CLOUDTASKS_CONTAINER"; then
+                    log_info "Connecting $CLOUDTASKS_CONTAINER to network $NETWORK_NAME"
+                    docker network connect "$NETWORK_NAME" "$CLOUDTASKS_CONTAINER" 2>/dev/null || true
+                fi
+                log_success "Cloud tasks emulator started"
+            else
+                log_error "Failed to start existing cloud tasks emulator container"
+                log_info "Removing existing container and creating a new one..."
+                docker rm "$CLOUDTASKS_CONTAINER" >/dev/null 2>&1 || true
+            fi
+        fi
+
+        # Only create new container if we don't have a running one
+        if ! container_running "$CLOUDTASKS_CONTAINER"; then
+            log_info "Starting cloud tasks emulator..."
+            if docker run -d \
+                --name "$CLOUDTASKS_CONTAINER" \
+                --network "$NETWORK_NAME" \
+                -p 8123:8123 \
+                "$CLOUDTASKS_IMAGE" --host=0.0.0.0 >/dev/null 2>&1; then
+                log_success "Cloud tasks emulator started"
+            else
+                log_error "Failed to start cloud tasks emulator"
+                log_error "This may be due to port 8123 being in use or the image not being available"
+                log_info "You can try manually running: docker run -d --name $CLOUDTASKS_CONTAINER --network $NETWORK_NAME -p 8123:8123 $CLOUDTASKS_IMAGE --host=0.0.0.0"
+                exit 1
+            fi
+        fi
+    fi
 }
 
 wait_for_services() {
@@ -277,15 +314,11 @@ monitor_backend_logs() {
 ###############################################################################
 
 stop_all_containers() {
-    log_info "Stopping all test containers..."
+    log_info "Stopping test containers (preserving cloud tasks emulator)..."
 
     # Stop individual containers (don't remove them)
     if container_running "$BACKEND_CONTAINER"; then
         docker stop "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
-    fi
-
-    if container_running "$CLOUDTASKS_CONTAINER"; then
-        docker stop "$CLOUDTASKS_CONTAINER" >/dev/null 2>&1 || true
     fi
 
     # Stop testserver container
@@ -293,7 +326,7 @@ stop_all_containers() {
         docker stop "$TESTSERVER_CONTAINER" >/dev/null 2>&1 || true
     fi
 
-    log_success "All containers stopped (containers preserved for inspection)"
+    log_success "Test containers stopped (cloud tasks emulator left running)"
 }
 
 ###############################################################################
@@ -436,18 +469,21 @@ main() {
         echo "  ✓ Test sequence initiated and completed successfully"
         echo "  ✓ Backend processed all game events until completion"
         echo ""
-        echo "🔍 Containers are stopped but preserved for inspection:"
+        echo "🔍 Test containers are stopped but preserved for inspection:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
         if [ "$ENV_FILE" != ".env.home" ]; then
             echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
         fi
         echo ""
-        echo "🧹 To clean up containers completely:"
+        echo "🧹 To clean up stopped test containers:"
         if [ "$ENV_FILE" != ".env.home" ]; then
-            echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER $TESTSERVER_CONTAINER"
+            echo "  docker rm $BACKEND_CONTAINER $TESTSERVER_CONTAINER"
         else
-            echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER"
+            echo "  docker rm $BACKEND_CONTAINER"
         fi
+        echo ""
+        echo "ℹ️  Cloud tasks emulator left running at http://localhost:8123"
+        echo "   To stop it manually: docker stop $CLOUDTASKS_CONTAINER"
     fi
 }
 
@@ -459,14 +495,17 @@ cleanup_on_interrupt() {
 
     if [ "$CONTAINERS_ONLY" = true ]; then
         echo ""
-        log_success "🧹 Containers stopped successfully"
+        log_success "🧹 Test containers stopped successfully"
         echo ""
         echo "🔍 To inspect stopped containers:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
         echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
         echo ""
-        echo "🗑️ To remove containers completely:"
-        echo "  docker rm $BACKEND_CONTAINER $CLOUDTASKS_CONTAINER $TESTSERVER_CONTAINER"
+        echo "🗑️ To remove stopped containers:"
+        echo "  docker rm $BACKEND_CONTAINER $TESTSERVER_CONTAINER"
+        echo ""
+        echo "ℹ️  Cloud tasks emulator left running at http://localhost:8123"
+        echo "   To stop it manually: docker stop $CLOUDTASKS_CONTAINER"
     fi
 
     exit 0

@@ -5,12 +5,19 @@
 
 set -e  # Exit on any error
 
+# Generate unique timestamp suffix for this run
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Container names with timestamp
+CLOUDTASKS_CONTAINER="cloudtasks-emulator-${TIMESTAMP}"
+BACKEND_CONTAINER="sendgameupdates-${TIMESTAMP}"
 
 # Logging functions
 log_info() {
@@ -140,7 +147,7 @@ pull_docker_images() {
     log_success "Cloud Tasks emulator image pulled"
 }
 
-# Function to check for port conflicts
+# Function to check for port conflicts and stop old containers
 check_port_availability() {
     local port=$1
     local service_name=$2
@@ -150,10 +157,17 @@ check_port_availability() {
         log_info "Finding process using port $port..."
         lsof -i :$port
 
-        # Check if it's our container
+        # Check if it's our container from a previous run
         if docker ps --format "table {{.Names}}\t{{.Ports}}" | grep -q ":$port->"; then
-            log_info "Port $port is used by an existing Docker container, will clean up"
-            return 1
+            log_info "Port $port is used by a Docker container from a previous run"
+            # Find and stop the container using this port
+            local container_name=$(docker ps --format "{{.Names}}\t{{.Ports}}" | grep ":$port->" | awk '{print $1}' | head -n1)
+            if [ -n "$container_name" ]; then
+                log_info "Stopping container: $container_name"
+                docker stop "$container_name" 2>/dev/null || true
+                log_success "Container stopped (preserved for log inspection)"
+            fi
+            return 0
         else
             log_error "Port $port is in use by a non-Docker process. Please stop the process or use a different port."
             log_info "You can find and stop the process with: kill \$(lsof -t -i:$port)"
@@ -163,44 +177,39 @@ check_port_availability() {
     return 0
 }
 
-# Function to clean up existing containers
-cleanup_containers() {
-    log_info "Cleaning up existing containers..."
+# Function to check for existing containers (informational only - no cleanup)
+check_existing_containers() {
+    log_info "Checking for existing containers..."
 
-    # Check if our containers exist
-    existing_containers=$(docker ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "{{.Names}}" 2>/dev/null || true)
+    # List all our previous containers (stopped and running)
+    existing_containers=$(docker ps -a --filter "label=ctc.script=setup-local" --format "table {{.Names}}\t{{.Status}}\t{{.CreatedAt}}" 2>/dev/null || true)
 
     if [ -n "$existing_containers" ]; then
-        log_info "Found existing containers: $existing_containers"
-        log_info "Stopping and removing them to create fresh containers..."
-
-        # Stop and remove our specific containers
-        docker stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
-        docker rm -f cloudtasks-emulator sendgameupdates 2>/dev/null || true
-
-        log_success "Existing containers cleaned up"
+        log_info "Found previous containers from earlier runs:"
+        echo "$existing_containers" | head -n 10
+        if [ $(echo "$existing_containers" | wc -l) -gt 10 ]; then
+            log_info "... and more. Use 'docker ps -a --filter label=ctc.script=setup-local' to see all."
+        fi
+        echo ""
+        log_info "Previous containers are preserved for log inspection"
+        log_info "To clean up old containers manually: docker rm \$(docker ps -aq --filter label=ctc.script=setup-local --filter status=exited)"
     else
-        log_info "No existing containers found"
-    fi
-
-    # Also clean up any other containers that might be using our ports
-    conflicting_containers=$(docker ps -a --format "table {{.Names}}\t{{.Ports}}" | grep -E ":8080->|:8123->" | awk '{print $1}' | grep -v NAMES | grep -v "cloudtasks-emulator\|sendgameupdates" || true)
-
-    if [ -n "$conflicting_containers" ]; then
-        log_warning "Found containers using our ports: $conflicting_containers"
-        echo "$conflicting_containers" | xargs -r docker rm -f 2>/dev/null || true
-        log_success "Conflicting containers cleaned up"
+        log_info "No previous containers found from this script"
     fi
 }
 
 # Function to start Cloud Tasks emulator
 start_cloud_tasks_emulator() {
-    log_info "Starting Cloud Tasks emulator..."
+    log_info "Starting Cloud Tasks emulator as: $CLOUDTASKS_CONTAINER"
 
-    # Remove any existing container with the same name
-    docker rm -f cloudtasks-emulator 2>/dev/null || true
-
-    if docker run -d --name cloudtasks-emulator --network net -p 8123:8123 \
+    if docker run -d \
+        --name "$CLOUDTASKS_CONTAINER" \
+        --network net \
+        -p 8123:8123 \
+        --label "ctc.script=setup-local" \
+        --label "ctc.service=cloudtasks-emulator" \
+        --label "ctc.timestamp=$TIMESTAMP" \
+        --label "ctc.created=$(date -Iseconds)" \
         ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0; then
 
         # Wait for emulator to be ready
@@ -208,7 +217,7 @@ start_cloud_tasks_emulator() {
         sleep 5
 
         # Check if container is running
-        if docker ps | grep -q cloudtasks-emulator; then
+        if docker ps | grep -q "$CLOUDTASKS_CONTAINER"; then
             log_success "Cloud Tasks emulator started successfully"
 
             # Test if the emulator is responding
@@ -224,7 +233,7 @@ start_cloud_tasks_emulator() {
             done
         else
             log_error "Cloud Tasks emulator container is not running"
-            docker logs cloudtasks-emulator 2>/dev/null || true
+            docker logs "$CLOUDTASKS_CONTAINER" 2>/dev/null || true
             exit 1
         fi
     else
@@ -243,26 +252,33 @@ build_and_run_service() {
         exit 1
     fi
 
-    if docker build -t sendgameupdates .; then
-        log_success "Docker image built successfully"
+    # Build with timestamp tag
+    local image_tag="sendgameupdates:${TIMESTAMP}"
+    if docker build -t "$image_tag" .; then
+        log_success "Docker image built successfully: $image_tag"
     else
         log_error "Failed to build Docker image"
         exit 1
     fi
 
-    log_info "Starting main service container..."
+    log_info "Starting main service container as: $BACKEND_CONTAINER"
 
-    # Remove any existing container with the same name
-    docker rm -f sendgameupdates 2>/dev/null || true
-
-    if docker run -d -p 8080:8080 --name sendgameupdates --network net \
-        --env-file .env sendgameupdates; then
+    if docker run -d \
+        -p 8080:8080 \
+        --name "$BACKEND_CONTAINER" \
+        --network net \
+        --label "ctc.script=setup-local" \
+        --label "ctc.service=sendgameupdates" \
+        --label "ctc.timestamp=$TIMESTAMP" \
+        --label "ctc.created=$(date -Iseconds)" \
+        --env-file .env \
+        "$image_tag"; then
 
         # Wait for service to be ready
         log_info "Waiting for main service to be ready..."
         sleep 5
 
-        if docker ps | grep -q sendgameupdates; then
+        if docker ps | grep -q "$BACKEND_CONTAINER"; then
             log_success "Main service container started successfully"
 
             # Test if the service is responding
@@ -272,7 +288,7 @@ build_and_run_service() {
                     break
                 elif [ $i -eq 15 ]; then
                     log_warning "Main service may not be fully ready yet (this can be normal on first start)"
-                    log_info "You can check the service status with: docker logs sendgameupdates"
+                    log_info "You can check the service status with: docker logs $BACKEND_CONTAINER"
                 else
                     sleep 2
                 fi
@@ -280,7 +296,7 @@ build_and_run_service() {
         else
             log_error "Main service container is not running"
             log_info "Checking container logs..."
-            docker logs sendgameupdates 2>/dev/null || true
+            docker logs "$BACKEND_CONTAINER" 2>/dev/null || true
             exit 1
         fi
     else
@@ -327,25 +343,31 @@ test_setup() {
 monitor_containers() {
     log_info "Monitoring containers... (Press Ctrl+C to stop)"
     echo ""
-    log_info "Container status:"
-    docker ps --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    log_info "Current run containers:"
+    docker ps --filter "name=$CLOUDTASKS_CONTAINER" --filter "name=$BACKEND_CONTAINER" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
     echo ""
 
     # Monitor container health and display logs
     while true; do
         # Check if both containers are still running
-        running_containers=$(docker ps --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "{{.Names}}" | wc -l)
-
-        if [ "$running_containers" -lt 2 ]; then
+        if ! docker ps --format "{{.Names}}" | grep -q "^${CLOUDTASKS_CONTAINER}$" || ! docker ps --format "{{.Names}}" | grep -q "^${BACKEND_CONTAINER}$"; then
             log_warning "One or more containers have stopped. Checking status..."
 
             # Show status of our containers
-            docker ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "table {{.Names}}\t{{.Status}}"
+            docker ps -a --filter "name=$CLOUDTASKS_CONTAINER" --filter "name=$BACKEND_CONTAINER" --format "table {{.Names}}\t{{.Status}}"
 
             # Check if containers exited with errors
-            failed_containers=$(docker ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --filter "status=exited" --format "{{.Names}}")
+            if docker ps -a --filter "name=$CLOUDTASKS_CONTAINER" --filter "status=exited" --format "{{.Names}}" | grep -q "^${CLOUDTASKS_CONTAINER}$" || \
+               docker ps -a --filter "name=$BACKEND_CONTAINER" --filter "status=exited" --format "{{.Names}}" | grep -q "^${BACKEND_CONTAINER}$"; then
 
-            if [ -n "$failed_containers" ]; then
+                failed_containers=""
+                if docker ps -a --filter "name=$CLOUDTASKS_CONTAINER" --filter "status=exited" --format "{{.Names}}" | grep -q "^${CLOUDTASKS_CONTAINER}$"; then
+                    failed_containers="$CLOUDTASKS_CONTAINER "
+                fi
+                if docker ps -a --filter "name=$BACKEND_CONTAINER" --filter "status=exited" --format "{{.Names}}" | grep -q "^${BACKEND_CONTAINER}$"; then
+                    failed_containers="${failed_containers}$BACKEND_CONTAINER"
+                fi
+
                 log_error "Containers failed: $failed_containers"
                 log_info "Showing logs for failed containers:"
                 for container in $failed_containers; do
@@ -354,6 +376,10 @@ monitor_containers() {
                     echo ""
                 done
                 log_error "Services have failed. Check the logs above for details."
+                log_info "Containers are preserved for inspection. To view full logs:"
+                for container in $failed_containers; do
+                    echo "  docker logs $container"
+                done
                 exit 1
             fi
         fi
@@ -413,10 +439,7 @@ main() {
 
         setup_docker_network
         pull_docker_images
-        cleanup_containers
-
-        # Wait a moment for cleanup to complete
-        sleep 2
+        check_existing_containers
 
         start_cloud_tasks_emulator
         build_and_run_service
@@ -440,15 +463,15 @@ main() {
 
     if [ "$DOCKER_AVAILABLE" = true ] && [ "${SKIP_DOCKER:-false}" != "true" ]; then
         log_info "Services are running in Docker containers:"
-        echo "  - Cloud Tasks Emulator: http://localhost:8123"
-        echo "  - Main Service: http://localhost:8080"
+        echo "  - Cloud Tasks Emulator: http://localhost:8123 ($CLOUDTASKS_CONTAINER)"
+        echo "  - Main Service: http://localhost:8080 ($BACKEND_CONTAINER)"
         echo ""
         log_info "Available for testing:"
         echo "  - Use the GetEventDataByDate.sh script to fetch game data"
         echo "  - Run localCloudTasksTest/localCloudTasksTest to create tasks"
         echo "  - Check Docker containers: docker ps"
         echo ""
-        log_info "Press Ctrl+C to stop services (containers will be preserved for faster restart)"
+        log_info "Press Ctrl+C to stop services (containers will be preserved for log review)"
     else
         log_info "Docker setup skipped. Available binaries:"
         echo "  - ./watchgameupdates/watchgameupdates (main service)"
@@ -465,10 +488,21 @@ cleanup_on_interrupt() {
     log_info "Received interrupt signal, stopping containers..."
 
     # Stop containers gracefully but don't remove them
-    docker stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
+    docker stop "$CLOUDTASKS_CONTAINER" "$BACKEND_CONTAINER" 2>/dev/null || true
 
-    log_success "Containers stopped. They will be cleaned up and rebuilt on next script run."
-    log_info "To manually clean up: docker rm cloudtasks-emulator sendgameupdates"
+    log_success "Containers stopped and preserved for log review."
+    log_info "Container names for this run:"
+    echo "  - Cloud Tasks: $CLOUDTASKS_CONTAINER"
+    echo "  - Backend: $BACKEND_CONTAINER"
+    echo ""
+    log_info "To view logs:"
+    echo "  docker logs $CLOUDTASKS_CONTAINER"
+    echo "  docker logs $BACKEND_CONTAINER"
+    echo ""
+    log_info "To remove these containers:"
+    echo "  docker rm $CLOUDTASKS_CONTAINER $BACKEND_CONTAINER"
+    echo ""
+    log_info "Next script run will create new containers with a fresh timestamp"
     exit 0
 }
 
@@ -476,14 +510,18 @@ cleanup_on_interrupt() {
 cleanup_on_failure() {
     if [ "$1" != "0" ]; then
         log_info "Setup failed, stopping containers..."
-        docker stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
+        docker stop "$CLOUDTASKS_CONTAINER" "$BACKEND_CONTAINER" 2>/dev/null || true
 
-        if [ "${CLEANUP_ON_EXIT:-true}" = "true" ]; then
-            log_info "Removing failed containers..."
-            docker rm cloudtasks-emulator sendgameupdates 2>/dev/null || true
-        else
-            log_info "Leaving containers for debugging. Clean up with: docker rm cloudtasks-emulator sendgameupdates"
-        fi
+        log_info "Containers preserved for debugging:"
+        echo "  - $CLOUDTASKS_CONTAINER"
+        echo "  - $BACKEND_CONTAINER"
+        echo ""
+        log_info "To view logs:"
+        echo "  docker logs $CLOUDTASKS_CONTAINER"
+        echo "  docker logs $BACKEND_CONTAINER"
+        echo ""
+        log_info "To remove these containers:"
+        echo "  docker rm $CLOUDTASKS_CONTAINER $BACKEND_CONTAINER"
     fi
 }
 
@@ -525,8 +563,9 @@ while [[ $# -gt 0 ]]; do
             echo "Behavior:"
             echo "  - Script keeps running until you press Ctrl+C"
             echo "  - Containers are stopped (not deleted) when script exits"
-            echo "  - Next run will clean up and rebuild containers"
-            echo "  - This provides faster restarts during development"
+            echo "  - Each run creates new timestamped containers"
+            echo "  - Old containers are preserved for log review"
+            echo "  - Use Docker Desktop or 'docker ps -a' to view all runs"
             echo ""
             echo "Environment Variables:"
             echo "  SKIP_DOCKER=true       Same as --skip-docker"

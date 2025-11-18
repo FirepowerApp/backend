@@ -37,12 +37,6 @@ var buildTargets = map[string]BuildTarget{
 		BinaryName:  "localCloudTasksTest",
 		Description: "Local Cloud Tasks test client for testing task queue functionality",
 	},
-	"schedulegametrackers": {
-		Name:        "schedulegametrackers",
-		SourcePath:  "./scheduleGameTrackers/cmd/schedulegametrackers",
-		BinaryName:  "schedulegametrackers",
-		Description: "NHL game tracker scheduler that creates Cloud Tasks for game monitoring",
-	},
 }
 
 func main() {

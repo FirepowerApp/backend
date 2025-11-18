@@ -51,7 +51,6 @@ The script acts like a development server:
 - **`localCloudTasksTest/`** - Test client for local development and testing
   - Creates Cloud Tasks queues and tasks
   - Tests the complete workflow
-- **`scheduleGameTrackers/`** - Schedule tracking components
 - **`data/`** - Directory for storing NHL game data and responses
 - **`GetEventDataByDate.sh`** - Helper script to fetch NHL game data
 - **`setup-local.sh`** - One-command setup script for local development
@@ -93,7 +92,6 @@ If you prefer to set up components manually:
    # Use the build system instead
    go run build.go -target watchgameupdates
    go run build.go -target localCloudTasksTest
-   go run build.go -target schedulegametrackers
 
    # Or build all at once
    go run build.go -all

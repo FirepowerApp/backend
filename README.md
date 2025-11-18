@@ -184,7 +184,6 @@ For a complete containerized test that mirrors your original workflow:
 1. **Cleanup**: Removes any existing containers that might conflict
 2. **Build & Run**: Builds and starts all required containers:
    - Backend watchgameupdates service (port 8080)
-   - Testserver with docker-compose (provides mock game data)
    - Cloud tasks emulator (ghcr.io/aertje/cloud-tasks-emulator:latest)
 3. **Test Initiation**: Runs the local cloud tasks test program to trigger the test sequence
 4. **Monitoring**: Watches backend logs for the completion signal: `"Last play type: game-end, Should reschedule: false"`
@@ -200,8 +199,7 @@ For a complete containerized test that mirrors your original workflow:
 **After automated testing:**
 - Containers are stopped but not deleted for inspection
 - Check backend logs: `docker logs watchgameupdates`
-- Check testserver logs: `docker-compose -f testserver/docker-compose.yml logs`
-- Clean up: `docker rm watchgameupdates cloudtasks-emulator && docker-compose -f testserver/docker-compose.yml rm -f`
+- Clean up: `docker rm watchgameupdates cloudtasks-emulator`
 
 #### Quick Test Mode Setup (Alternative)
 
@@ -215,16 +213,12 @@ Actual performance is not fully validated.
 
 This script will:
 1. Enable test mode in environment variables
-2. Build and start the backend with test servers
+2. Build and start the backend
 3. Run the end-to-end test suite
 4. Cycle through 10 predefined game events
 5. Verify statistics fetching and game completion
 
 #### Test Mode Features
-
-**Simulated APIs:**
-- **NHL Play-by-Play API** (localhost:8125) - Returns predefined game events
-- **MoneyPuck Statistics API** (localhost:8124) - Returns fictitious statistics
 
 **Predefined Game Events:**
 1. `faceoff` - Game start event
@@ -252,13 +246,10 @@ To run the original manual workflow (now automated by the script above):
 docker build -t watchgameupdates watchgameupdates/
 docker run -p 8080:8080 --name watchgameupdates --network net --env-file watchgameupdates/.env watchgameupdates
 
-# Build and run test server
-cd testserver/ && docker-compose up --build -d
-
 # Build and run cloud task emulator
 docker run -it --name cloudtasks-emulator -p 8123:8123 ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0
 
-# Initiate monitoring a fake game
+# Initiate monitoring a game
 ./localCloudTasksTest/localCloudTasksTest
 ```
 
@@ -352,7 +343,7 @@ docker network rm net
 
 1. **Go version errors**: Ensure you have Go 1.23.3 or later installed
 2. **Docker not running**: Start Docker Desktop or Docker daemon
-3. **Port conflicts**: Ensure ports 8080, 8123, 8124, and 8125 are available
+3. **Port conflicts**: Ensure ports 8080 and 8123 are available
 4. **Container startup failures**: Check Docker logs: `docker logs watchgameupdates`
 
 ### Automated Test Script Issues
@@ -365,10 +356,9 @@ docker network rm net
 2. **Test times out after 5 minutes**:
    - Check if all containers started properly: `docker ps`
    - Inspect backend logs: `docker logs watchgameupdates`
-   - Verify testserver is responding: `curl http://localhost:8125/v1/gamecenter/test/play-by-play`
 
 3. **Port conflicts during automated testing**:
-   - Ensure no other services are running on ports 8080, 8123, 8124, 8125
+   - Ensure no other services are running on ports 8080 and 8123
    - The script attempts to clean up existing containers automatically
 
 4. **Network issues**:
@@ -382,9 +372,6 @@ docker network rm net
 
    # Check backend logs
    docker logs watchgameupdates
-
-   # Check testserver logs
-   docker-compose -f testserver/docker-compose.yml logs
 
    # Access container shell for debugging
    docker exec -it watchgameupdates /bin/sh

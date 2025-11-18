@@ -29,7 +29,6 @@ NC='\033[0m' # No Color
 # Container and network names
 BACKEND_CONTAINER="watchgameupdates"
 BACKEND_IMAGE="watchgameupdates"
-TESTSERVER_CONTAINER="mockdataapi-testserver-1"
 CLOUDTASKS_CONTAINER="cloudtasks-emulator"
 CLOUDTASKS_IMAGE="ghcr.io/aertje/cloud-tasks-emulator:latest"
 NETWORK_NAME="net"
@@ -129,37 +128,6 @@ build_and_run_backend() {
     log_success "Backend container started"
 }
 
-start_testserver() {
-    log_info "Starting existing testserver container..."
-
-    # Check if the mockdataapi container exists
-    if ! container_exists "$TESTSERVER_CONTAINER"; then
-        log_error "Container '$TESTSERVER_CONTAINER' does not exist!"
-        log_error "Please ensure the mockdataapi container is built and available."
-        log_error "Expected container name: $TESTSERVER_CONTAINER"
-        exit 1
-    fi
-
-    # Start the container if it's not running
-    if ! container_running "$TESTSERVER_CONTAINER"; then
-        log_info "Starting container: $TESTSERVER_CONTAINER"
-        if ! docker start "$TESTSERVER_CONTAINER" >/dev/null 2>&1; then
-            log_error "Failed to start container: $TESTSERVER_CONTAINER"
-            exit 1
-        fi
-    else
-        log_info "Container $TESTSERVER_CONTAINER is already running"
-    fi
-
-    # Connect testserver container to our main network for inter-container communication
-    if ! docker network inspect "$NETWORK_NAME" --format '{{range .Containers}}{{.Name}} {{end}}' | grep -q "$TESTSERVER_CONTAINER"; then
-        log_info "Connecting $TESTSERVER_CONTAINER to network $NETWORK_NAME"
-        docker network connect "$NETWORK_NAME" "$TESTSERVER_CONTAINER" 2>/dev/null || true
-    fi
-
-    log_success "Testserver started"
-}
-
 start_cloudtasks_emulator() {
     if container_running "$CLOUDTASKS_CONTAINER"; then
         log_info "Cloud tasks emulator is already running, skipping startup"
@@ -211,22 +179,6 @@ start_cloudtasks_emulator() {
 wait_for_services() {
     log_info "Waiting for services to be ready..."
     sleep 5  # Give services time to start up
-
-    # Check if testserver is responding (only if testserver is expected to be running)
-    if [ "$ENV_FILE" != ".env.home" ]; then
-        local retries=0
-        local max_retries=30
-        while ! curl -s http://localhost:8125/v1/gamecenter/test/play-by-play >/dev/null 2>&1; do
-            retries=$((retries + 1))
-            if [ $retries -gt $max_retries ]; then
-                log_warning "Testserver health check failed, continuing anyway..."
-                break
-            fi
-            sleep 1
-        done
-    else
-        log_info "Skipping testserver health check (using live APIs)"
-    fi
 
     # Check if backend is responding (expect 400/405 for GET request)
     local retries=0
@@ -321,11 +273,6 @@ stop_all_containers() {
         docker stop "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
     fi
 
-    # Stop testserver container
-    if container_running "$TESTSERVER_CONTAINER"; then
-        docker stop "$TESTSERVER_CONTAINER" >/dev/null 2>&1 || true
-    fi
-
     log_success "Test containers stopped (cloud tasks emulator left running)"
 }
 
@@ -376,9 +323,6 @@ wait_for_interrupt() {
     log_info "Containers are running and ready for use"
     log_info "Services available at:"
     log_info "  • Backend: http://localhost:8080"
-    if [ "$ENV_FILE" != ".env.home" ]; then
-        log_info "  • Testserver: http://localhost:8125"
-    fi
     log_info "  • Cloud Tasks Emulator: http://localhost:8123"
     echo ""
     log_info "Press Ctrl+C to stop all containers and exit..."
@@ -419,14 +363,6 @@ main() {
 
     # Step 3: Build and start all services
     build_and_run_backend
-
-    # Only start testserver if not using home environment (which uses live APIs)
-    if [ "$ENV_FILE" != ".env.home" ]; then
-        start_testserver
-    else
-        log_info "Skipping testserver (using live APIs with .env.home)"
-    fi
-
     start_cloudtasks_emulator
 
     # Step 4: Wait for services to be ready
@@ -447,7 +383,6 @@ main() {
             log_error "Test execution failed or timed out"
             log_info "Check container logs for more details:"
             log_info "  Backend: docker logs $BACKEND_CONTAINER"
-            log_info "  Testserver: docker logs $TESTSERVER_CONTAINER"
             stop_all_containers
             exit 1
         fi
@@ -460,27 +395,15 @@ main() {
         echo ""
         echo "📋 What was tested:"
         echo "  ✓ Backend container built and started"
-        if [ "$ENV_FILE" != ".env.home" ]; then
-            echo "  ✓ Testserver provided mock NHL and MoneyPuck API data"
-        else
-            echo "  ✓ Backend used live NHL and MoneyPuck API data"
-        fi
         echo "  ✓ Cloud tasks emulator handled task scheduling"
         echo "  ✓ Test sequence initiated and completed successfully"
         echo "  ✓ Backend processed all game events until completion"
         echo ""
         echo "🔍 Test containers are stopped but preserved for inspection:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
-        if [ "$ENV_FILE" != ".env.home" ]; then
-            echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
-        fi
         echo ""
         echo "🧹 To clean up stopped test containers:"
-        if [ "$ENV_FILE" != ".env.home" ]; then
-            echo "  docker rm $BACKEND_CONTAINER $TESTSERVER_CONTAINER"
-        else
-            echo "  docker rm $BACKEND_CONTAINER"
-        fi
+        echo "  docker rm $BACKEND_CONTAINER"
         echo ""
         echo "ℹ️  Cloud tasks emulator left running at http://localhost:8123"
         echo "   To stop it manually: docker stop $CLOUDTASKS_CONTAINER"
@@ -499,10 +422,9 @@ cleanup_on_interrupt() {
         echo ""
         echo "🔍 To inspect stopped containers:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
-        echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
         echo ""
         echo "🗑️ To remove stopped containers:"
-        echo "  docker rm $BACKEND_CONTAINER $TESTSERVER_CONTAINER"
+        echo "  docker rm $BACKEND_CONTAINER"
         echo ""
         echo "ℹ️  Cloud tasks emulator left running at http://localhost:8123"
         echo "   To stop it manually: docker stop $CLOUDTASKS_CONTAINER"

@@ -188,7 +188,7 @@ For a complete containerized test that mirrors your original workflow:
 2. **Cleanup**: Removes any existing containers that might conflict
 3. **Build & Run**: Builds and starts all required containers:
    - Backend watchgameupdates service (port 8080)
-   - Game data emulator (firepowerapp/firepowermockdataserver:latest) - provides mock NHL/MoneyPuck APIs
+   - Game data emulator (blnelson/firepowermockdataserver:latest) - provides mock NHL/MoneyPuck APIs
    - Cloud tasks emulator (ghcr.io/aertje/cloud-tasks-emulator:latest)
 4. **Test Initiation**: Runs the local cloud tasks test program to trigger the test sequence
 5. **Monitoring**: Watches backend logs for the completion signal: `"Last play type: game-end, Should reschedule: false"`
@@ -385,9 +385,9 @@ docker network rm net
    - The script attempts to clean up existing containers automatically
 
 4. **Registry pull failures**:
-   - If `docker pull firepowerapp/firepowermockdataserver:latest` fails with network errors, the script uses local cache
+   - If `docker pull blnelson/firepowermockdataserver:latest` fails with network errors, the script uses local cache
    - Use `--strict-registry` flag if you want to enforce latest version
-   - Manually pull image: `docker pull firepowerapp/firepowermockdataserver:latest`
+   - Manually pull image: `docker pull blnelson/firepowermockdataserver:latest`
 
 5. **Network issues**:
    - The script creates a Docker network named 'net' if it doesn't exist

@@ -12,7 +12,7 @@
 # 6. Cleaning up containers after test completion
 #
 # Container Registry Management:
-#   - Automatically pulls latest gameDataEmulator from Docker Hub (firepowerapp/firepowermockdataserver)
+#   - Automatically pulls latest gameDataEmulator from Docker Hub (blnelson/firepowermockdataserver)
 #   - Compares with local version and updates if different
 #   - Falls back to local cache on network errors
 #   - Removes old image versions to save space
@@ -40,7 +40,7 @@ BACKEND_IMAGE="watchgameupdates"
 CLOUDTASKS_CONTAINER="cloudtasks-emulator"
 CLOUDTASKS_IMAGE="ghcr.io/aertje/cloud-tasks-emulator:latest"
 EMULATOR_CONTAINER="firepowermockdataserver"
-EMULATOR_IMAGE="firepowerapp/firepowermockdataserver:latest"
+EMULATOR_IMAGE="blnelson/firepowermockdataserver:latest"
 NETWORK_NAME="net"
 
 # Log monitoring settings

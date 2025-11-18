@@ -12,7 +12,7 @@
 # 6. Cleaning up containers after test completion
 #
 # Container Registry Management:
-#   - Automatically pulls latest gameDataEmulator from ghcr.io/firepowerapp
+#   - Automatically pulls latest gameDataEmulator from Docker Hub (firepowerapp/firepowermockdataserver)
 #   - Compares with local version and updates if different
 #   - Falls back to local cache on network errors
 #   - Removes old image versions to save space
@@ -39,8 +39,8 @@ BACKEND_CONTAINER="watchgameupdates"
 BACKEND_IMAGE="watchgameupdates"
 CLOUDTASKS_CONTAINER="cloudtasks-emulator"
 CLOUDTASKS_IMAGE="ghcr.io/aertje/cloud-tasks-emulator:latest"
-EMULATOR_CONTAINER="gamedataemulator"
-EMULATOR_IMAGE="ghcr.io/firepowerapp/gamedataemulator:latest"
+EMULATOR_CONTAINER="firepowermockdataserver"
+EMULATOR_IMAGE="firepowerapp/firepowermockdataserver:latest"
 NETWORK_NAME="net"
 
 # Log monitoring settings
@@ -468,7 +468,7 @@ show_help() {
     echo "  -h, --help          Show this help message"
     echo ""
     echo "Container Registry Behavior:"
-    echo "  By default, the script tries to pull the latest gameDataEmulator from ghcr.io."
+    echo "  By default, the script tries to pull the latest gameDataEmulator from Docker Hub."
     echo "  - If successful: uses the latest image, removes old local versions"
     echo "  - If network error: falls back to local cached image (or fails if none)"
     echo "  - If other error: uses local cached image in non-strict mode"

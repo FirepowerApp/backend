@@ -1,0 +1,25 @@
+# Docker Compose Override for Development Environment
+# Uses live NHL and MoneyPuck APIs
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   OR use: make dev
+
+version: '3.8'
+
+services:
+  backend:
+    env_file:
+      - ./watchgameupdates/.env.home
+    depends_on:
+      cloudtasks-emulator:
+        condition: service_healthy
+    environment:
+      - PORT=8080
+      # These should be set in .env.home to point to live APIs
+      # PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
+      # STATS_API_BASE_URL=https://moneypuck.com
+    profiles:
+      - dev
+
+  # mockdataapi is not needed in dev mode - backend connects to live APIs

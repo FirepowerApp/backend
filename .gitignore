@@ -4,3 +4,4 @@ GetEventDataByDate.sh
 bin/
 .env*
 !.env.example
+.current-project

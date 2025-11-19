@@ -1,9 +1,9 @@
-# Docker Compose Override for Development Environment
+# Docker Compose Override for Home Environment
 # Uses live NHL and MoneyPuck APIs
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-#   OR use: make dev
+#   docker compose -f docker-compose.yml -f docker-compose.home.yml up
+#   OR use: make home
 
 version: '3.8'
 
@@ -20,6 +20,6 @@ services:
       # PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
       # STATS_API_BASE_URL=https://moneypuck.com
     profiles:
-      - dev
+      - home
 
-  # mockdataapi is not needed in dev mode - backend connects to live APIs
+  # mockdataapi is not needed in home mode - backend connects to live APIs

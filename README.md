@@ -14,8 +14,8 @@ A Go-based backend service for tracking and managing NHL game updates using Goog
 # One-time setup: install dependencies and pull images
 make setup
 
-# Start development environment (connects to live NHL/MoneyPuck APIs)
-make dev
+# Start home environment (connects to live NHL/MoneyPuck APIs)
+make home
 
 # View logs
 make logs
@@ -61,7 +61,7 @@ make setup               # Initial setup (one-time)
 make pull                # Pull latest Docker images
 
 # Development
-make dev                 # Start dev environment (live APIs)
+make home                 # Start home environment (live APIs)
 make test-containers     # Start test environment (mock APIs)
 make test                # Run full automated test suite
 
@@ -85,11 +85,11 @@ make port-check          # Check port availability
 
 The system supports two environment modes:
 
-#### Development Mode (Live APIs)
+#### Home Mode (Live APIs)
 Uses real NHL and MoneyPuck APIs for development and testing with live data.
 
 ```bash
-make dev
+make home
 ```
 
 Configuration: `watchgameupdates/.env.home`
@@ -221,8 +221,8 @@ Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Resch
 If you prefer using Docker Compose directly:
 
 ```bash
-# Start development environment
-docker compose --profile dev up -d
+# Start home environment
+docker compose --profile home up -d
 
 # Start test environment
 docker compose --profile test up -d
@@ -358,7 +358,7 @@ make clean-all
 
 # Restart from scratch
 make setup
-make dev
+make home
 ```
 
 ## API Reference
@@ -427,7 +427,7 @@ Update environment variables for production:
 
 1. Start development environment:
    ```bash
-   make dev
+   make home
    ```
 
 2. Make code changes in your editor
@@ -435,11 +435,11 @@ Update environment variables for production:
 3. Rebuild and restart:
    ```bash
    # Rebuild and restart all services
-   docker compose --profile dev up -d --build
+   docker compose --profile home up -d --build
 
    # Or use make
    make stop
-   make dev
+   make home
    ```
 
 4. View logs to verify changes:
@@ -465,7 +465,7 @@ Update environment variables for production:
 
 The following shell scripts are still available for reference but Docker Compose + Makefile is the recommended approach:
 
-- `setup-local.sh` - Legacy setup script (use `make setup && make dev` instead)
+- `setup-local.sh` - Legacy setup script (use `make setup && make home` instead)
 - `scripts/run_automated_test.sh` - Legacy test script (use `make test` instead)
 
 ## Contributing

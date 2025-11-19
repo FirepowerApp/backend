@@ -3,15 +3,15 @@
 #
 # Main targets:
 #   make setup          - Initial setup (pull images, install deps)
-#   make dev            - Start development environment (live APIs)
+#   make home           - Start home environment (live APIs)
 #   make test           - Run automated integration tests (with mocks)
 #   make test-containers - Start test containers and keep running
-#   make logs           - View logs from all containers
-#   make clean          - Stop and remove all containers
+#   make logs           - View logs from current containers
+#   make clean          - Stop and remove current containers
 #   make build          - Build all Go binaries
 #   make pull           - Pull all required Docker images (with retry)
 
-.PHONY: help setup dev test test-containers clean logs build pull check-deps check-docker check-go pull-with-retry status stop restart
+.PHONY: help setup home test test-containers clean logs build pull check-deps check-docker check-go pull-with-retry status stop restart clean-all list-containers
 
 # Color output
 BLUE := \033[0;34m
@@ -23,7 +23,12 @@ NC := \033[0m # No Color
 # Docker compose files
 COMPOSE_FILE := docker-compose.yml
 COMPOSE_TEST := docker-compose.test.yml
-COMPOSE_DEV := docker-compose.dev.yml
+COMPOSE_HOME := docker-compose.home.yml
+
+# Generate unique project name with timestamp for container isolation
+# This allows multiple executions to have separate containers for historical log access
+PROJECT_NAME := backend-$(shell date +%Y%m%d-%H%M%S)
+PROJECT_FILE := .current-project
 
 # Retry settings for pulling images
 MAX_RETRIES := 4
@@ -110,30 +115,52 @@ setup: check-deps pull ## Initial setup - check prerequisites and pull images
 	@printf "$(GREEN)[SUCCESS]$(NC) Data directory created\n"
 	@printf "$(GREEN)[SUCCESS]$(NC) Setup completed successfully!\n"
 	@printf "\n$(BLUE)[INFO]$(NC) Next steps:\n"
-	@printf "  - Run 'make dev' to start development environment (live APIs)\n"
+	@printf "  - Run 'make home' to start home environment (live APIs)\n"
 	@printf "  - Run 'make test' to run automated tests (with mocks)\n"
 	@printf "  - Run 'make test-containers' to start test environment and keep running\n"
 
-dev: check-docker ## Start development environment with live APIs (.env.home)
-	@printf "$(BLUE)[INFO]$(NC) Starting development environment (live APIs)...\n"
-	@docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_DEV) --profile dev up --build -d
-	@printf "$(GREEN)[SUCCESS]$(NC) Development environment started\n"
+home: check-docker ## Start home environment with live APIs (.env.home)
+	@printf "$(BLUE)[INFO]$(NC) Starting home environment (live APIs)...\n"
+	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
+	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
+	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_HOME) build --progress=plain 2>&1 | tee /tmp/build.log; then \
+		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
+		rm -f $(PROJECT_FILE); \
+		exit 1; \
+	fi
+	@printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"
+	@printf "$(BLUE)[INFO]$(NC) Starting containers...\n"
+	@docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_HOME) --profile home up -d
+	@printf "$(GREEN)[SUCCESS]$(NC) Home environment started\n"
 	@printf "\n$(BLUE)[INFO]$(NC) Services available at:\n"
 	@printf "  • Backend: http://localhost:8080\n"
 	@printf "  • Cloud Tasks Emulator: http://localhost:8123\n"
+	@printf "\n$(BLUE)[INFO]$(NC) Container names:\n"
+	@docker compose -p $(PROJECT_NAME) ps --format "table {{.Name}}\t{{.Status}}"
 	@printf "\n$(BLUE)[INFO]$(NC) View logs with: make logs\n"
 	@printf "$(BLUE)[INFO]$(NC) Stop with: make stop\n"
+	@printf "$(BLUE)[INFO]$(NC) List all containers: make list-containers\n"
 
 test-containers: check-docker ## Start test containers and keep running (.env.local with mocks)
 	@printf "$(BLUE)[INFO]$(NC) Starting test containers (mock APIs)...\n"
+	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
+	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
+	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) build --progress=plain 2>&1 | tee /tmp/build.log; then \
+		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
+		rm -f $(PROJECT_FILE); \
+		exit 1; \
+	fi
+	@printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"
 	@if ! docker images -q mockdataapi:latest >/dev/null 2>&1; then \
 		printf "$(YELLOW)[WARNING]$(NC) mockdataapi:latest image not found.\n"; \
 		printf "$(YELLOW)[WARNING]$(NC) The testserver was removed in commit 606aa80.\n"; \
 		printf "$(YELLOW)[WARNING]$(NC) To use test mode, you need to rebuild the testserver.\n"; \
 		printf "$(YELLOW)[WARNING]$(NC) Continuing without mockdataapi (will use live APIs if configured)...\n"; \
-		docker compose -f $(COMPOSE_FILE) --profile dev up --build -d; \
+		docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) --profile home up -d; \
 	else \
-		docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) --profile test up --build -d; \
+		docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) --profile test up -d; \
 	fi
 	@printf "$(GREEN)[SUCCESS]$(NC) Test containers started\n"
 	@printf "\n$(BLUE)[INFO]$(NC) Services available at:\n"
@@ -143,19 +170,30 @@ test-containers: check-docker ## Start test containers and keep running (.env.lo
 		printf "  • Mock NHL API: http://localhost:8125\n"; \
 		printf "  • Mock MoneyPuck API: http://localhost:8124\n"; \
 	fi
+	@printf "\n$(BLUE)[INFO]$(NC) Container names:\n"
+	@docker compose -p $(PROJECT_NAME) ps --format "table {{.Name}}\t{{.Status}}"
 	@printf "\n$(BLUE)[INFO]$(NC) View logs with: make logs\n"
 	@printf "$(BLUE)[INFO]$(NC) Stop with: make stop\n"
 
 test: check-docker ## Run full automated integration test
 	@printf "$(BLUE)🚀 Starting CrashTheCrease Backend Automated Test$(NC)\n"
 	@printf "==================================================\n\n"
+	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
+	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
+	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) build --progress=plain 2>&1 | tee /tmp/build.log; then \
+		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
+		rm -f $(PROJECT_FILE); \
+		exit 1; \
+	fi
+	@printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"
 	@if ! docker images -q mockdataapi:latest >/dev/null 2>&1; then \
 		printf "$(YELLOW)[WARNING]$(NC) mockdataapi:latest image not found.\n"; \
 		printf "$(YELLOW)[WARNING]$(NC) Running tests with live APIs instead of mocks...\n"; \
-		$(MAKE) test-containers; \
+		docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) --profile home up -d; \
 	else \
 		printf "$(BLUE)[INFO]$(NC) Starting test containers...\n"; \
-		docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) --profile test up --build -d; \
+		docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) --profile test up -d; \
 		printf "$(GREEN)[SUCCESS]$(NC) Test containers started\n"; \
 	fi
 	@printf "\n$(BLUE)[INFO]$(NC) Waiting for services to be ready...\n"
@@ -169,11 +207,12 @@ test: check-docker ## Run full automated integration test
 	@printf "$(GREEN)[SUCCESS]$(NC) Test sequence initiated\n"
 	@printf "\n$(BLUE)[INFO]$(NC) Monitoring backend logs for completion...\n"
 	@printf "$(BLUE)[INFO]$(NC) Looking for: 'Last play type: game-end, Should reschedule: false'\n"
-	@elapsed=0; \
+	@BACKEND_CONTAINER=$$(docker compose -p $(PROJECT_NAME) ps -q backend); \
+	elapsed=0; \
 	max_wait=900; \
 	found=false; \
 	while [ $$elapsed -lt $$max_wait ]; do \
-		if docker logs watchgameupdates 2>&1 | grep -q "Last play type: game-end, Should reschedule: false"; then \
+		if docker logs $$BACKEND_CONTAINER 2>&1 | grep -q "Last play type: game-end, Should reschedule: false"; then \
 			found=true; \
 			break; \
 		fi; \
@@ -197,9 +236,9 @@ test: check-docker ## Run full automated integration test
 		printf "  ✓ Test sequence completed successfully\n"; \
 		printf "  ✓ Backend processed all game events\n\n"; \
 		printf "🔍 Test containers stopped but preserved for inspection:\n"; \
-		printf "  • Backend logs: docker logs watchgameupdates\n"; \
+		printf "  • View logs: make logs-history PROJECT=$(PROJECT_NAME)\n"; \
 		printf "  • Clean up with: make clean\n\n"; \
-		docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) stop backend mockdataapi 2>/dev/null || docker compose -f $(COMPOSE_FILE) stop backend 2>/dev/null || true; \
+		docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) stop backend mockdataapi 2>/dev/null || docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) stop backend 2>/dev/null || true; \
 	else \
 		printf "$(RED)[ERROR]$(NC) Test timed out or failed after $${elapsed}s\n"; \
 		printf "$(BLUE)[INFO]$(NC) Check logs with: make logs\n"; \
@@ -208,39 +247,121 @@ test: check-docker ## Run full automated integration test
 
 ##@ Container Management
 
-status: ## Show status of all containers
-	@printf "$(BLUE)[INFO]$(NC) Container status:\n"
-	@docker compose -f $(COMPOSE_FILE) ps
+status: ## Show status of current containers
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Current project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT ps; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project. Start containers with 'make home' or 'make test-containers'\n"; \
+	fi
 
-logs: ## View logs from all running containers
-	@docker compose -f $(COMPOSE_FILE) logs -f
+logs: ## View logs from current containers
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Showing logs for project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT logs -f; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project. Start containers with 'make home' or 'make test-containers'\n"; \
+	fi
 
-logs-backend: ## View logs from backend container only
-	@docker logs -f watchgameupdates 2>&1
+logs-backend: ## View logs from current backend container only
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		BACKEND_CONTAINER=$$(docker compose -p $$PROJECT ps -q backend 2>/dev/null); \
+		if [ -n "$$BACKEND_CONTAINER" ]; then \
+			docker logs -f $$BACKEND_CONTAINER 2>&1; \
+		else \
+			printf "$(RED)[ERROR]$(NC) Backend container not found for project $$PROJECT\n"; \
+		fi; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project. Start containers with 'make home' or 'make test-containers'\n"; \
+	fi
 
 logs-cloudtasks: ## View logs from cloud tasks emulator only
-	@docker logs -f cloudtasks-emulator 2>&1
+	@EMULATOR_CONTAINER=$$(docker ps --filter "name=cloudtasks-emulator" -q | head -1); \
+	if [ -n "$$EMULATOR_CONTAINER" ]; then \
+		docker logs -f $$EMULATOR_CONTAINER 2>&1; \
+	else \
+		printf "$(RED)[ERROR]$(NC) Cloud tasks emulator not running\n"; \
+	fi
 
-stop: ## Stop all containers (preserves containers for faster restart)
-	@printf "$(BLUE)[INFO]$(NC) Stopping containers...\n"
-	@docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) stop 2>/dev/null || docker compose -f $(COMPOSE_FILE) stop
-	@printf "$(GREEN)[SUCCESS]$(NC) Containers stopped\n"
+logs-history: ## View logs from a specific historical project (use PROJECT=backend-YYYYMMDD-HHMMSS)
+	@if [ -z "$(PROJECT)" ]; then \
+		printf "$(RED)[ERROR]$(NC) Please specify PROJECT. Example: make logs-history PROJECT=backend-20251119-143022\n"; \
+		printf "$(BLUE)[INFO]$(NC) Available projects:\n"; \
+		docker ps -a --filter "label=com.docker.compose.project" --format "{{.Label \"com.docker.compose.project\"}}" | grep "^backend-" | sort -u; \
+		exit 1; \
+	fi
+	@printf "$(BLUE)[INFO]$(NC) Showing logs for project: $(PROJECT)\n"
+	@BACKEND_CONTAINER=$$(docker ps -a --filter "label=com.docker.compose.project=$(PROJECT)" --filter "label=com.docker.compose.service=backend" --format "{{.ID}}" | head -1); \
+	if [ -n "$$BACKEND_CONTAINER" ]; then \
+		docker logs $$BACKEND_CONTAINER 2>&1; \
+	else \
+		printf "$(RED)[ERROR]$(NC) No backend container found for project $(PROJECT)\n"; \
+	fi
 
-restart: stop ## Restart all containers
-	@printf "$(BLUE)[INFO]$(NC) Restarting containers...\n"
-	@docker compose -f $(COMPOSE_FILE) start
-	@printf "$(GREEN)[SUCCESS]$(NC) Containers restarted\n"
+list-containers: ## List all backend containers (current and historical)
+	@printf "$(BLUE)[INFO]$(NC) All backend containers:\n"
+	@docker ps -a --filter "label=com.docker.compose.service=backend" --format "table {{.Label \"com.docker.compose.project\"}}\t{{.Names}}\t{{.Status}}\t{{.CreatedAt}}" | head -20
 
-clean: ## Stop and remove all containers and networks
-	@printf "$(BLUE)[INFO]$(NC) Cleaning up containers and networks...\n"
-	@docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_DEV) down -v 2>/dev/null || true
-	@docker stop cloudtasks-emulator watchgameupdates mockdataapi-testserver-1 2>/dev/null || true
-	@docker rm cloudtasks-emulator watchgameupdates mockdataapi-testserver-1 2>/dev/null || true
-	@printf "$(GREEN)[SUCCESS]$(NC) Cleanup completed\n"
+stop: ## Stop current containers (preserves for log access)
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Stopping containers for project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT stop; \
+		printf "$(GREEN)[SUCCESS]$(NC) Containers stopped (preserved for log access)\n"; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project to stop\n"; \
+	fi
 
-clean-all: clean ## Stop and remove all containers, networks, and images
-	@printf "$(BLUE)[INFO]$(NC) Removing built images...\n"
+restart: ## Restart current containers
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Restarting containers for project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT restart; \
+		printf "$(GREEN)[SUCCESS]$(NC) Containers restarted\n"; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project to restart\n"; \
+	fi
+
+clean: ## Stop and remove current containers
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Cleaning up project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_HOME) down -v 2>/dev/null || true; \
+		rm -f $(PROJECT_FILE); \
+		printf "$(GREEN)[SUCCESS]$(NC) Current project cleaned up\n"; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project to clean\n"; \
+	fi
+
+clean-history: ## Remove old historical containers (keeps last 5)
+	@printf "$(BLUE)[INFO]$(NC) Cleaning old backend containers (keeping last 5)...\n"
+	@PROJECTS=$$(docker ps -a --filter "label=com.docker.compose.service=backend" --format "{{.Label \"com.docker.compose.project\"}}" | grep "^backend-" | sort -u | head -n -5); \
+	if [ -n "$$PROJECTS" ]; then \
+		for project in $$PROJECTS; do \
+			printf "$(BLUE)[INFO]$(NC) Removing project: $$project\n"; \
+			docker compose -p $$project down -v 2>/dev/null || true; \
+		done; \
+		printf "$(GREEN)[SUCCESS]$(NC) Old containers cleaned up\n"; \
+	else \
+		printf "$(BLUE)[INFO]$(NC) No old containers to clean (5 or fewer exist)\n"; \
+	fi
+
+clean-all: ## Remove ALL containers, networks, and images
+	@printf "$(YELLOW)[WARNING]$(NC) This will remove ALL backend containers and the cloud tasks emulator\n"
+	@printf "Continue? [y/N] " && read ans && [ $${ans:-N} = y ]
+	@printf "$(BLUE)[INFO]$(NC) Removing all backend projects...\n"
+	@PROJECTS=$$(docker ps -a --filter "label=com.docker.compose.service=backend" --format "{{.Label \"com.docker.compose.project\"}}" | grep "^backend-" | sort -u); \
+	for project in $$PROJECTS; do \
+		printf "$(BLUE)[INFO]$(NC) Removing project: $$project\n"; \
+		docker compose -p $$project down -v 2>/dev/null || true; \
+	done
+	@docker stop cloudtasks-emulator 2>/dev/null || true
+	@docker rm cloudtasks-emulator 2>/dev/null || true
 	@docker rmi watchgameupdates:latest mockdataapi:latest 2>/dev/null || true
+	@rm -f $(PROJECT_FILE)
 	@printf "$(GREEN)[SUCCESS]$(NC) All containers, networks, and images removed\n"
 
 ##@ Building
@@ -278,11 +399,21 @@ port-check: ## Check if required ports are available
 		fi; \
 	done
 
-shell-backend: ## Open a shell in the backend container
-	@docker exec -it watchgameupdates /bin/sh 2>/dev/null || printf "$(RED)[ERROR]$(NC) Backend container not running. Start it with 'make dev' or 'make test-containers'\n"
+shell-backend: ## Open a shell in the current backend container
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		BACKEND_CONTAINER=$$(docker compose -p $$PROJECT ps -q backend 2>/dev/null); \
+		if [ -n "$$BACKEND_CONTAINER" ]; then \
+			docker exec -it $$BACKEND_CONTAINER /bin/sh; \
+		else \
+			printf "$(RED)[ERROR]$(NC) Backend container not running\n"; \
+		fi; \
+	else \
+		printf "$(RED)[ERROR]$(NC) No current project. Start containers with 'make home' or 'make test-containers'\n"; \
+	fi
 
 shell-cloudtasks: ## Open a shell in the cloud tasks emulator container
-	@docker exec -it cloudtasks-emulator /bin/sh 2>/dev/null || printf "$(RED)[ERROR]$(NC) Cloud tasks emulator not running. Start it with 'make dev' or 'make test-containers'\n"
+	@docker exec -it cloudtasks-emulator /bin/sh 2>/dev/null || printf "$(RED)[ERROR]$(NC) Cloud tasks emulator not running\n"
 
 ##@ Troubleshooting
 
@@ -292,7 +423,8 @@ doctor: check-deps port-check ## Run all diagnostic checks
 	@printf "\nDocker images:\n"
 	@docker images | grep -E 'REPOSITORY|watchgameupdates|mockdataapi|cloud-tasks-emulator' || true
 	@printf "\nDocker containers:\n"
-	@docker ps -a | grep -E 'CONTAINER|watchgameupdates|mockdataapi|cloudtasks' || true
+	@docker ps -a --filter "label=com.docker.compose.service=backend" --format "table {{.Label \"com.docker.compose.project\"}}\t{{.Names}}\t{{.Status}}" | head -10 || true
+	@docker ps -a --filter "name=cloudtasks-emulator" --format "table {{.Names}}\t{{.Status}}" || true
 
 clean-cache: ## Clean Go build cache and module cache
 	@printf "$(BLUE)[INFO]$(NC) Cleaning Go caches...\n"

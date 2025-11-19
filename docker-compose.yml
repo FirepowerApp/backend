@@ -3,7 +3,7 @@
 #
 # Usage:
 #   make setup          # Pull images and setup
-#   make dev            # Start development environment
+#   make home           # Start home environment (live APIs)
 #   make test           # Run full automated tests
 #   make test-containers # Start containers for manual testing
 #   make logs           # View logs
@@ -12,7 +12,7 @@
 # Or use docker compose directly:
 #   docker compose up                    # Start with default profile
 #   docker compose --profile test up     # Start test environment
-#   docker compose --profile dev up      # Start dev environment
+#   docker compose --profile home up     # Start home environment
 #   docker compose down                  # Stop all services
 
 version: '3.8'
@@ -43,18 +43,19 @@ services:
     # Emulator persists across runs - only stopped manually or with 'docker compose down'
     restart: unless-stopped
     profiles:
-      - dev
+      - home
       - test
       - default
 
   # Backend Service - Main application
+  # Note: Container name is dynamically generated with timestamp for log persistence
   backend:
     <<: *common-settings
     build:
       context: ./watchgameupdates
       dockerfile: Dockerfile
     image: watchgameupdates:latest
-    container_name: watchgameupdates
+    # No container_name - allows unique names per execution for log history
     ports:
       - "8080:8080"
     env_file:
@@ -70,7 +71,7 @@ services:
       # Backend returns 400/405 for GET requests, which is expected
       test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080 || [ $? -eq 8 ] || exit 1"]
     profiles:
-      - dev
+      - home
       - test
       - default
 

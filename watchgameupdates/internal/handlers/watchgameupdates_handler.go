@@ -11,6 +11,7 @@ import (
 
 	"watchgameupdates/config"
 	"watchgameupdates/internal/models"
+	"watchgameupdates/internal/notification"
 	"watchgameupdates/internal/services"
 	"watchgameupdates/internal/tasks"
 
@@ -18,7 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher services.GameDataFetcher, recomputeTypes map[string]struct{}, notifier Notifier) {
+func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher services.GameDataFetcher, notificationService *notification.Service) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -48,6 +49,12 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 		log.Println("Max execution time not set, proceeding without time check.")
 	}
 
+	recomputeTypes := map[string]struct{}{
+		"blocked-shot": {},
+		"missed-shot":  {},
+		"shot-on-goal": {},
+		"goal":         {},
+	}
 	lastPlay := services.FetchPlayByPlay(payload.Game.ID)
 	homeTeamExpectedGoals := ""
 	awayTeamExpectedGoals := ""
@@ -101,7 +108,7 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 			awayTeamGoals, _ := fetcher.GetColumnValue("awayTeamGoals", records)
 
 			// Send notification using the provided notifier
-			sendExpectedGoalsNotification(notifier, homeTeam, awayTeam, homeTeamExpectedGoals, awayTeamExpectedGoals, homeTeamGoals, awayTeamGoals)
+			notificationService.SendGameUpdate(homeTeam, awayTeam, homeTeamExpectedGoals, awayTeamExpectedGoals, homeTeamGoals, awayTeamGoals)
 		}
 	}
 
@@ -115,6 +122,42 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 			return
 		}
 	}
+}
+
+func parseRequestPayload(r *http.Request) (models.Payload, error) {
+	var payload models.Payload
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return payload, fmt.Errorf("failed to read request body: %w", err)
+	}
+
+	log.Printf("Raw body: %s", body)
+
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return payload, fmt.Errorf("invalid request payload: %w", err)
+	}
+
+	return payload, nil
+}
+
+func shouldSkipExecution(payload models.Payload) (bool, error) {
+	if payload.ExecutionEnd != nil {
+		executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
+		if err != nil {
+			log.Printf("Invalid scheduled_time format: %v", err)
+			return true, err
+		}
+
+		if time.Now().After(executionEnd) {
+			log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
+			return true, nil
+		}
+	} else {
+		log.Println("Max execution time not set, proceeding without time check.")
+	}
+
+	return false, nil
 }
 
 // scheduleNextCheck creates a Cloud Task to reschedule the next game check

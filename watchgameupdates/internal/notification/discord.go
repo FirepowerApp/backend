@@ -1,10 +1,11 @@
-package main
+package notification
 
 import (
 	"context"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,14 +13,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// DiscordNotifier implements the Notifier interface for Discord notifications
 type DiscordNotifier struct {
 	session   *discordgo.Session
 	channelID string
 	token     string
 }
 
-// NewDiscordNotifier creates a new Discord notifier instance
 func NewDiscordNotifier(config NotifierConfig) (*DiscordNotifier, error) {
 	token, exists := config.Config["DISCORD_BOT_TOKEN"]
 	if !exists || token == "" {
@@ -149,6 +148,14 @@ func (d *DiscordNotifier) SendBatch(ctx context.Context, batch NotificationBatch
 	return resultChan, nil
 }
 
+// Close cleanly shuts down the Discord notifier
+func (d *DiscordNotifier) Close() error {
+	if d.session != nil {
+		return d.session.Close()
+	}
+	return nil
+}
+
 // formatMessage creates a formatted Discord message from the notification request
 func (d *DiscordNotifier) formatMessage(req NotificationRequest) string {
 	var builder strings.Builder
@@ -165,6 +172,7 @@ func (d *DiscordNotifier) formatMessage(req NotificationRequest) string {
 			displayKey = strings.Title(strings.ToLower(displayKey))
 
 			// Format the value appropriately
+			value, _ := strconv.ParseFloat(value, 64)
 			if value == float64(int64(value)) {
 				// Display as integer if it's a whole number
 				builder.WriteString(fmt.Sprintf("• %s: %d\n", displayKey, int64(value)))
@@ -178,14 +186,6 @@ func (d *DiscordNotifier) formatMessage(req NotificationRequest) string {
 	builder.WriteString(fmt.Sprintf("\n*Notification sent at %s*", time.Now().Format("15:04:05 MST")))
 
 	return builder.String()
-}
-
-// Close cleanly shuts down the Discord notifier
-func (d *DiscordNotifier) Close() error {
-	if d.session != nil {
-		return d.session.Close()
-	}
-	return nil
 }
 
 // LoadDiscordConfigFromEnv loads Discord configuration from environment variables

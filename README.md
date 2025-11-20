@@ -179,27 +179,46 @@ For a complete containerized test that mirrors your original workflow:
 ```
 
 **What this script does:**
-1. **Cleanup**: Removes any existing containers that might conflict
-2. **Build & Run**: Builds and starts all required containers:
+1. **Registry Management**: Automatically fetches the latest gameDataEmulator container from Docker Hub
+   - Compares with local version and updates if different
+   - Falls back to local cache on network errors
+   - Removes old image versions to save space
+2. **Cleanup**: Removes any existing containers that might conflict
+3. **Build & Run**: Builds and starts all required containers:
    - Backend watchgameupdates service (port 8080)
-   - Testserver with docker-compose (provides mock game data)
+   - Game data emulator (blnelson/firepowermockdataserver:latest) - provides mock NHL/MoneyPuck APIs
    - Cloud tasks emulator (ghcr.io/aertje/cloud-tasks-emulator:latest)
-3. **Test Initiation**: Runs the local cloud tasks test program to trigger the test sequence
-4. **Monitoring**: Watches backend logs for the completion signal: `"Last play type: game-end, Should reschedule: false"`
-5. **Cleanup**: Stops all containers once testing is complete (containers are preserved for log inspection)
+4. **Test Initiation**: Runs the local cloud tasks test program to trigger the test sequence
+5. **Monitoring**: Watches backend logs for the completion signal: `"Last play type: game-end, Should reschedule: false"`
+6. **Cleanup**: Stops all containers once testing is complete (containers are preserved for log inspection)
 
 **Features:**
+- Automatic container registry management with smart fallback
 - Runs silently without displaying container logs during execution
 - Provides colored status updates throughout the process
-- Includes timeout protection (5-minute maximum)
+- Includes timeout protection (15-minute maximum)
 - Preserves containers for post-test log inspection
 - Handles errors gracefully with proper cleanup
+
+**Script Options:**
+```bash
+./scripts/run_automated_test.sh                    # Full test with mock APIs
+./scripts/run_automated_test.sh --containers-only  # Start containers only, keep running
+./scripts/run_automated_test.sh --env-home         # Use live NHL/MoneyPuck APIs instead of emulator
+./scripts/run_automated_test.sh --strict-registry  # Fail if can't fetch latest emulator from registry
+```
+
+**Container Registry Behavior:**
+- **Default mode**: Tries to pull latest gameDataEmulator. On network error, falls back to local cache. On other errors, uses local cache in non-strict mode.
+- **Strict mode** (`--strict-registry`): Always fails if unable to get latest container for any reason.
+- **Home mode** (`--env-home`): Skips game data emulator entirely and uses live NHL/MoneyPuck APIs.
 
 **After automated testing:**
 - Containers are stopped but not deleted for inspection
 - Check backend logs: `docker logs watchgameupdates`
-- Check testserver logs: `docker-compose -f testserver/docker-compose.yml logs`
-- Clean up: `docker rm watchgameupdates cloudtasks-emulator && docker-compose -f testserver/docker-compose.yml rm -f`
+- Check emulator logs: `docker logs firepowermockdataserver`
+- Clean up: `docker rm watchgameupdates firepowermockdataserver`
+- Cloud tasks emulator is preserved and left running
 
 #### Quick Test Mode Setup (Alternative)
 
@@ -213,16 +232,12 @@ Actual performance is not fully validated.
 
 This script will:
 1. Enable test mode in environment variables
-2. Build and start the backend with test servers
+2. Build and start the backend
 3. Run the end-to-end test suite
 4. Cycle through 10 predefined game events
 5. Verify statistics fetching and game completion
 
 #### Test Mode Features
-
-**Simulated APIs:**
-- **NHL Play-by-Play API** (localhost:8125) - Returns predefined game events
-- **MoneyPuck Statistics API** (localhost:8124) - Returns fictitious statistics
 
 **Predefined Game Events:**
 1. `faceoff` - Game start event
@@ -250,13 +265,10 @@ To run the original manual workflow (now automated by the script above):
 docker build -t watchgameupdates watchgameupdates/
 docker run -p 8080:8080 --name watchgameupdates --network net --env-file watchgameupdates/.env watchgameupdates
 
-# Build and run test server
-cd testserver/ && docker-compose up --build -d
-
 # Build and run cloud task emulator
 docker run -it --name cloudtasks-emulator -p 8123:8123 ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0
 
-# Initiate monitoring a fake game
+# Initiate monitoring a game
 ./localCloudTasksTest/localCloudTasksTest
 ```
 
@@ -351,7 +363,8 @@ docker network rm net
 1. **Go version errors**: Ensure you have Go 1.23.3 or later installed
 2. **Docker not running**: Start Docker Desktop or Docker daemon
 3. **Port conflicts**: Ensure ports 8080, 8123, 8124, and 8125 are available
-4. **Container startup failures**: Check Docker logs: `docker logs watchgameupdates`
+4. **Container startup failures**: Check Docker logs: `docker logs watchgameupdates` or `docker logs firepowermockdataserver`
+5. **Registry access issues**: If you can't access Docker Hub, the script will fall back to locally cached images. Use `--strict-registry` to enforce latest version.
 
 ### Automated Test Script Issues
 
@@ -360,20 +373,25 @@ docker network rm net
    chmod +x scripts/run_automated_test.sh
    ```
 
-2. **Test times out after 5 minutes**:
+2. **Test times out after 15 minutes**:
    - Check if all containers started properly: `docker ps`
    - Inspect backend logs: `docker logs watchgameupdates`
-   - Verify testserver is responding: `curl http://localhost:8125/v1/gamecenter/test/play-by-play`
+   - Inspect emulator logs: `docker logs firepowermockdataserver`
 
 3. **Port conflicts during automated testing**:
-   - Ensure no other services are running on ports 8080, 8123, 8124, 8125
+   - Ensure no other services are running on ports 8080, 8123, 8124, and 8125
    - The script attempts to clean up existing containers automatically
 
-4. **Network issues**:
+4. **Registry pull failures**:
+   - If `docker pull blnelson/firepowermockdataserver:latest` fails with network errors, the script uses local cache
+   - Use `--strict-registry` flag if you want to enforce latest version
+   - Manually pull image: `docker pull blnelson/firepowermockdataserver:latest`
+
+5. **Network issues**:
    - The script creates a Docker network named 'net' if it doesn't exist
    - If you encounter network conflicts, manually clean up: `docker network rm net`
 
-5. **Container inspection after testing**:
+6. **Container inspection after testing**:
    ```bash
    # View all containers (running and stopped)
    docker ps -a
@@ -381,11 +399,12 @@ docker network rm net
    # Check backend logs
    docker logs watchgameupdates
 
-   # Check testserver logs
-   docker-compose -f testserver/docker-compose.yml logs
+   # Check game data emulator logs
+   docker logs firepowermockdataserver
 
    # Access container shell for debugging
    docker exec -it watchgameupdates /bin/sh
+   docker exec -it firepowermockdataserver /bin/sh
    ```
 
 ### Debugging

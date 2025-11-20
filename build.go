@@ -19,12 +19,6 @@ type BuildTarget struct {
 
 // Available build targets
 var buildTargets = map[string]BuildTarget{
-	"testserver": {
-		Name:        "testserver",
-		SourcePath:  "./testserver/cmd/testserver",
-		BinaryName:  "testserver",
-		Description: "Test server that simulates NHL and MoneyPuck APIs",
-	},
 	"watchgameupdates": {
 		Name:        "watchgameupdates",
 		SourcePath:  "./watchgameupdates/cmd/watchgameupdates",
@@ -41,7 +35,7 @@ var buildTargets = map[string]BuildTarget{
 
 func main() {
 	var (
-		target = flag.String("target", "", "Target to build (testserver, watchgameupdates, localCloudTasksTest)")
+		target = flag.String("target", "", "Target to build (watchgameupdates, localCloudTasksTest, schedulegametrackers)")
 		list   = flag.Bool("list", false, "List available build targets")
 		all    = flag.Bool("all", false, "Build all available targets")
 	)
@@ -90,7 +84,7 @@ func showUsage() {
 	fmt.Println("  go run build.go -list             List available targets")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  go run build.go -target testserver")
+	fmt.Println("  go run build.go -target watchgameupdates")
 	fmt.Println("  go run build.go -all")
 	fmt.Println()
 	fmt.Println("All binaries are saved to ./bin/")

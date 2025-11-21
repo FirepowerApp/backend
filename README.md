@@ -466,7 +466,6 @@ Update environment variables for production:
 The following shell scripts are still available for reference but Docker Compose + Makefile is the recommended approach:
 
 - `setup-local.sh` - Legacy setup script (use `make setup && make home` instead)
-- `scripts/run_automated_test.sh` - Legacy test script (use `make test` instead)
 
 ## Contributing
 

@@ -2,454 +2,392 @@
 
 A Go-based backend service for tracking and managing NHL game updates using Google Cloud Tasks.
 
+## Prerequisites
+
+- **Go 1.23.3+** - [Install Go](https://go.dev/doc/install)
+- **Docker** - [Install Docker](https://docs.docker.com/get-docker/)
+- **Make** - Usually pre-installed on Linux/macOS
+
 ## Quick Start
 
-To set up and run the project locally in one command:
-
 ```bash
-# Make the script executable and run complete setup
-chmod +x setup-local.sh && ./setup-local.sh
+# One-time setup: install dependencies and pull images
+make setup
+
+# Start home environment (connects to live NHL/MoneyPuck APIs)
+make home
+
+# View logs
+make logs
+
+# Stop services
+make stop
 ```
 
-This script will automatically:
-1. Check Go installation and version (requires Go 1.23.3+)
-2. Install dependencies for all Go modules
-3. Build all services and binaries
-4. Set up data directory
-5. Set up Docker environment (Cloud Tasks emulator + main service)
-6. Create Cloud Tasks queue
-7. Test the setup
-8. **Keep running and monitor containers**
-
-### Development Workflow
-
-The script acts like a development server:
-- **Keeps running**: Monitors containers and shows their status
-- **Graceful shutdown**: Press `Ctrl+C` to stop containers (but preserve them)
-- **Fast restarts**: Stopped containers are reused on next script run for faster startup
-- **Clean rebuilds**: Containers are only removed and rebuilt when script starts, ensuring fresh builds
-
-### Setup Script Options
-
-```bash
-# Skip Docker setup (build binaries only)
-./setup-local.sh --skip-docker
-
-# Don't cleanup containers on failure
-./setup-local.sh --no-cleanup
-
-# Show help
-./setup-local.sh --help
-```
+Your services will be available at:
+- Backend: http://localhost:8080
+- Cloud Tasks Emulator: http://localhost:8123
 
 ## Project Structure
 
-- **`watchgameupdates/`** - Main service for processing game updates and managing task queues
-  - Uses Google Cloud Functions framework
-  - Integrates with Google Cloud Tasks
-  - Fetches NHL game data from official APIs
-- **`localCloudTasksTest/`** - Test client for local development and testing
-  - Creates Cloud Tasks queues and tasks
-  - Tests the complete workflow
-- **`data/`** - Directory for storing NHL game data and responses
-- **`GetEventDataByDate.sh`** - Helper script to fetch NHL game data
-- **`setup-local.sh`** - One-command setup script for local development
+```
+backend/
+├── watchgameupdates/        # Main service
+│   ├── cmd/                 # Application entry point
+│   ├── internal/            # Internal packages
+│   │   ├── handlers/        # HTTP handlers
+│   │   ├── services/        # Business logic
+│   │   ├── tasks/           # Cloud Tasks integration
+│   │   └── models/          # Data models
+│   ├── config/              # Configuration management
+│   └── Dockerfile           # Container definition
+├── localCloudTasksTest/     # Test client for Cloud Tasks
+├── scripts/                 # Utility scripts
+├── docker-compose.yml       # Service orchestration
+├── Makefile                 # Development commands
+└── README.md                # This file
+```
 
-## Architecture
+## Development
 
-The project follows a clean architecture pattern:
+### Available Commands
 
-- **`cmd/`** - Application entry points
-- **`internal/handlers/`** - HTTP handlers and routing
-- **`internal/services/`** - Business logic services
-  - **Fetcher Service** - Retrieves game data from external APIs
-  - **PlayByPlay Service** - Processes play-by-play data
-  - **Rescheduler Service** - Manages task rescheduling
-- **`internal/tasks/`** - Task queue management and Cloud Tasks integration
-- **`internal/models/`** - Data models and structures
-- **`config/`** - Configuration management
+Run `make help` to see all available commands:
 
-## Manual Setup (Alternative)
+```bash
+# Setup & Prerequisites
+make check-deps          # Check Go and Docker installation
+make setup               # Initial setup (one-time)
+make pull                # Pull latest Docker images
 
-If you prefer to set up components manually:
+# Development
+make home                 # Start home environment (live APIs)
+make test-containers     # Start test environment (mock APIs)
+make test                # Run full automated test suite
 
-### Prerequisites
+# Container Management
+make status              # Show container status
+make logs                # View all logs
+make logs-backend        # View backend logs only
+make stop                # Stop containers
+make clean               # Remove containers and cleanup
 
-- Go 1.23.3 or later
-- Docker (for Cloud Tasks emulator and containerized services)
-- curl (for testing)
+# Building
+make build               # Build all Go binaries
+make build-backend       # Build backend binary only
 
-### Steps
+# Troubleshooting
+make doctor              # Run diagnostic checks
+make port-check          # Check port availability
+```
 
-1. **Install Go dependencies:**
-   ```bash
-   cd watchgameupdates && go mod download && go mod tidy && cd ..
-   cd localCloudTasksTest && go mod download && go mod tidy && cd ..
-   ```
+### Environment Modes
 
-2. **Build services:**
-   ```bash
-   # Use the build system instead
-   go run build.go -target watchgameupdates
-   go run build.go -target localCloudTasksTest
+The system supports two environment modes:
 
-   # Or build all at once
-   go run build.go -all
-   ```
+#### Home Mode (Live APIs)
+Uses real NHL and MoneyPuck APIs for development and testing with live data.
 
-3. **Set up Docker environment:**
-   ```bash
-   # Create Docker network
-   docker network create net
+```bash
+make home
+```
 
-   # Start Cloud Tasks emulator
-   docker run -d --name cloudtasks-emulator --network net -p 8123:8123 \
-     ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0
+Configuration: `watchgameupdates/.env.home`
 
-   # Build and run main service
-   cd watchgameupdates
-   docker build -t sendgameupdates .
-   docker run -d -p 8080:8080 --name sendgameupdates --network net \
-     --env-file .env sendgameupdates
-   cd ..
-   ```
+#### Test Mode (Mock APIs)
+Uses mock APIs for isolated testing without external dependencies.
 
-4. **Create Cloud Tasks queue:**
-   ```bash
-   cd localCloudTasksTest
-   ./localCloudTasksTest
-   cd ..
-   ```
+```bash
+make test-containers
+```
 
-## Configuration
+Configuration: `watchgameupdates/.env.local`
 
-The main service configuration is managed through environment variables in `watchgameupdates/.env`:
+### Configuration
 
+Environment files are located in `watchgameupdates/`:
+
+**`.env.local`** - Test environment with mock APIs
 ```env
 APP_ENV=local
-CLOUD_TASKS_EMULATOR_HOST=host.docker.internal:8123
-GCP_PROJECT_ID=localproject
-GCP_LOCATION=us-south1
-CLOUD_TASKS_QUEUE=gameschedule
-HANDLER_HOST=http://host.docker.internal:8080
+CLOUD_TASKS_EMULATOR_HOST=cloudtasks-emulator:8123
+PLAYBYPLAY_API_BASE_URL=http://mockdataapi-testserver-1:8125
+STATS_API_BASE_URL=http://mockdataapi-testserver-1:8124
+DISCORD_BOT_TOKEN=your_bot_token_here
 ```
 
-## Running the Services
-
-After setup, you can run the services in different ways:
-
-### Dockerized Setup (Recommended)
-If you used the full setup script, services are already running in Docker containers:
-
-- **Cloud Tasks Emulator**: http://localhost:8123
-- **Main Service**: http://localhost:8080
-
-### Standalone Binaries
-```bash
-# Main service (alternative to Docker)
-cd watchgameupdates
-./watchgameupdates
-
-# Test client
-cd localCloudTasksTest
-./localCloudTasksTest
+**`.env.home`** - Development environment with live APIs
+```env
+APP_ENV=development
+CLOUD_TASKS_EMULATOR_HOST=cloudtasks-emulator:8123
+PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
+STATS_API_BASE_URL=https://moneypuck.com
+DISCORD_BOT_TOKEN=your_bot_token_here
 ```
 
-### Helper Scripts
-```bash
-# Fetch NHL game data for testing
-./GetEventDataByDate.sh
+**`.env.example`** - Template for custom configurations
 
-# Reference Docker setup (see existing commands)
-./watchgameupdates/scripts/local_cloud_task_test.sh
-```
+Update the `DISCORD_BOT_TOKEN` in your environment files as needed.
 
 ## Testing
 
-### Local Test Mode
+### Automated Integration Tests
 
-The project now includes a comprehensive test mode that simulates NHL and MoneyPuck APIs locally, allowing for complete end-to-end testing without external dependencies.
-
-#### Automated Docker Test (Recommended)
-
-For a complete containerized test that mirrors your original workflow:
+Run the complete test suite:
 
 ```bash
-./scripts/run_automated_test.sh
+make test
 ```
 
-**What this script does:**
-1. **Registry Management**: Automatically fetches the latest gameDataEmulator container from Docker Hub
-   - Compares with local version and updates if different
-   - Falls back to local cache on network errors
-   - Removes old image versions to save space
-2. **Cleanup**: Removes any existing containers that might conflict
-3. **Build & Run**: Builds and starts all required containers:
-   - Backend watchgameupdates service (port 8080)
-   - Game data emulator (blnelson/firepowermockdataserver:latest) - provides mock NHL/MoneyPuck APIs
-   - Cloud tasks emulator (ghcr.io/aertje/cloud-tasks-emulator:latest)
-4. **Test Initiation**: Runs the local cloud tasks test program to trigger the test sequence
-5. **Monitoring**: Watches backend logs for the completion signal: `"Last play type: game-end, Should reschedule: false"`
-6. **Cleanup**: Stops all containers once testing is complete (containers are preserved for log inspection)
+This will:
+1. Start all required containers (backend, cloud tasks emulator, mock APIs)
+2. Run the test sequence
+3. Monitor logs for completion
+4. Report results and stop test containers
 
-**Features:**
-- Automatic container registry management with smart fallback
-- Runs silently without displaying container logs during execution
-- Provides colored status updates throughout the process
-- Includes timeout protection (15-minute maximum)
-- Preserves containers for post-test log inspection
-- Handles errors gracefully with proper cleanup
+### Manual Testing
 
-**Script Options:**
-```bash
-./scripts/run_automated_test.sh                    # Full test with mock APIs
-./scripts/run_automated_test.sh --containers-only  # Start containers only, keep running
-./scripts/run_automated_test.sh --env-home         # Use live NHL/MoneyPuck APIs instead of emulator
-./scripts/run_automated_test.sh --strict-registry  # Fail if can't fetch latest emulator from registry
-```
-
-**Container Registry Behavior:**
-- **Default mode**: Tries to pull latest gameDataEmulator. On network error, falls back to local cache. On other errors, uses local cache in non-strict mode.
-- **Strict mode** (`--strict-registry`): Always fails if unable to get latest container for any reason.
-- **Home mode** (`--env-home`): Skips game data emulator entirely and uses live NHL/MoneyPuck APIs.
-
-**After automated testing:**
-- Containers are stopped but not deleted for inspection
-- Check backend logs: `docker logs watchgameupdates`
-- Check emulator logs: `docker logs firepowermockdataserver`
-- Clean up: `docker rm watchgameupdates firepowermockdataserver`
-- Cloud tasks emulator is preserved and left running
-
-#### Quick Test Mode Setup (Alternative)
-
-The following script is an alternative single command test execution:
+Start the test environment and run tests manually:
 
 ```bash
-./scripts/run_full_test.sh
-```
+# Start containers
+make test-containers
 
-Actual performance is not fully validated.
+# In another terminal, run test client
+cd localCloudTasksTest
+./localCloudTasksTest
 
-This script will:
-1. Enable test mode in environment variables
-2. Build and start the backend
-3. Run the end-to-end test suite
-4. Cycle through 10 predefined game events
-5. Verify statistics fetching and game completion
+# View logs
+make logs-backend
 
-#### Test Mode Features
-
-**Predefined Game Events:**
-1. `faceoff` - Game start event
-2. `shot-on-goal` - Triggers statistics fetch
-3. `blocked-shot` - Triggers statistics fetch
-4. `missed-shot` - Triggers statistics fetch
-5. `goal` - Triggers statistics fetch
-6. `hit` - Standard game event
-7. `takeaway` - Standard game event
-8. `giveaway` - Standard game event
-9. `penalty` - Standard game event
-10. `game-end` - Completes the test cycle
-
-**Test Statistics:**
-- Home Team Expected Goals: Varies by game ID (default: 2.50)
-- Away Team Expected Goals: Varies by game ID (default: 2.50)
-- Statistics are fetched only for events that trigger recomputation
-
-#### Manual Test Mode
-
-To run the original manual workflow (now automated by the script above):
-
-```bash
-# Build and run backend using Docker
-docker build -t watchgameupdates watchgameupdates/
-docker run -p 8080:8080 --name watchgameupdates --network net --env-file watchgameupdates/.env watchgameupdates
-
-# Build and run cloud task emulator
-docker run -it --name cloudtasks-emulator -p 8123:8123 ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0
-
-# Initiate monitoring a game
-./localCloudTasksTest/localCloudTasksTest
-```
-
-### Testing with NHL Data
-
-The project includes scripts to work with real NHL game data:
-
-```bash
-# Get yesterday's game ID and fetch data
-./GetEventDataByDate.sh
-
-# Test the handler with real game data
-# (See GetEventDataByDate.sh for example curl commands)
+# Stop when done
+make stop
 ```
 
 ### Unit Tests
 
 ```bash
-# Run tests for all modules
-go test ./watchgameupdates/...
-go test ./localCloudTasksTest/...
+# Run all unit tests
+go test ./...
 
 # Run with coverage
 go test -cover ./...
+
+# Test specific package
+go test ./watchgameupdates/internal/services/...
 ```
 
-## Development
+## Architecture
 
-### Key Services
+### Services
 
-- **WatchGameUpdatesHandler** - Main HTTP handler that processes game update requests
+The project uses Docker Compose to orchestrate three main services:
+
+**Cloud Tasks Emulator**
+- Emulates Google Cloud Tasks for local development
+- Persists across test runs
+- Port: 8123
+
+**Backend (watchgameupdates)**
+- Main application service
+- Processes game updates and manages task queues
+- Port: 8080
+
+**Mock Data API** (optional, test mode only)
+- Provides mock NHL and MoneyPuck API responses
+- Ports: 8124 (MoneyPuck), 8125 (NHL)
+
+### Key Components
+
+- **WatchGameUpdatesHandler** - Main HTTP handler for game update requests
 - **HTTPGameDataFetcher** - Fetches game data from NHL APIs
 - **PlayByPlay Service** - Processes play-by-play events
 - **Task Factory** - Creates and manages Cloud Tasks
 - **Rescheduler** - Handles task rescheduling based on game state
+- **Fetcher Service** - Retrieves expected goals data from MoneyPuck
 
-### Local Development Workflow
+### Data Flow
 
-1. Use `./setup-local.sh` to set up the complete environment
-2. Make changes to Go code
-3. Rebuild specific services:
-   ```bash
-   cd watchgameupdates && go build -o watchgameupdates ./cmd/watchgameupdates/
-   ```
-4. Restart Docker containers if needed:
-   ```bash
-   docker restart sendgameupdates
-   ```
-5. Test changes using the test client or helper scripts
-
-### Environment Variables
-
-The system supports different environments through the `APP_ENV` variable:
-- `local` - Local development with emulators
-- `dev` - Development environment
-- `prod` - Production environment
-
-## Deployment
-
-The project includes a Dockerfile for containerized deployment:
-
-```bash
-cd watchgameupdates
-docker build -t crashthecrease-backend .
-docker run -p 8080:8080 crashthecrease-backend
+```
+Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Reschedule/Complete
+                    ↓
+              Discord Notifications
 ```
 
-For Google Cloud deployment, the service is designed to work with:
-- Google Cloud Functions
-- Google Cloud Tasks
-- Google Cloud Run
+## Advanced Usage
 
-## Stopping Services
+### Direct Docker Compose Usage
 
-To stop the local development environment:
+If you prefer using Docker Compose directly:
 
 ```bash
-# Stop containers
-docker stop cloudtasks-emulator sendgameupdates
+# Start home environment
+docker compose --profile home up -d
 
-# Remove containers (optional)
-docker rm cloudtasks-emulator sendgameupdates
+# Start test environment
+docker compose --profile test up -d
 
-# Remove network (optional)
-docker network rm net
+# View logs
+docker compose logs -f
+
+# Stop all services
+docker compose down
+```
+
+### Building Binaries
+
+Build Go binaries without Docker:
+
+```bash
+# Build all binaries
+make build
+
+# Build specific target
+go run build.go -target watchgameupdates
+go run build.go -target localCloudTasksTest
+
+# Binaries are output to ./bin/
+```
+
+### Manual Container Setup
+
+For manual Docker setup without Docker Compose:
+
+```bash
+# Create network
+docker network create net
+
+# Start Cloud Tasks emulator
+docker pull ghcr.io/aertje/cloud-tasks-emulator:latest
+docker run -d --name cloudtasks-emulator --network net -p 8123:8123 \
+  ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0
+
+# Build and run backend
+cd watchgameupdates
+docker build -t watchgameupdates .
+docker run -d -p 8080:8080 --name watchgameupdates --network net \
+  --env-file .env.home watchgameupdates
+cd ..
+
+# Create Cloud Tasks queue
+cd localCloudTasksTest
+./localCloudTasksTest
+cd ..
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Go version errors**: Ensure you have Go 1.23.3 or later installed
-2. **Docker not running**: Start Docker Desktop or Docker daemon
-3. **Port conflicts**: Ensure ports 8080, 8123, 8124, and 8125 are available
-4. **Container startup failures**: Check Docker logs: `docker logs watchgameupdates` or `docker logs firepowermockdataserver`
-5. **Registry access issues**: If you can't access Docker Hub, the script will fall back to locally cached images. Use `--strict-registry` to enforce latest version.
+**Port already in use**
+```bash
+# Check what's using the port
+make port-check
 
-### Automated Test Script Issues
+# Stop conflicting containers
+make clean
+```
 
-1. **Script fails with permission denied**:
-   ```bash
-   chmod +x scripts/run_automated_test.sh
-   ```
+**Services won't start**
+```bash
+# Run diagnostics
+make doctor
 
-2. **Test times out after 15 minutes**:
-   - Check if all containers started properly: `docker ps`
-   - Inspect backend logs: `docker logs watchgameupdates`
-   - Inspect emulator logs: `docker logs firepowermockdataserver`
+# Check Docker is running
+docker info
 
-3. **Port conflicts during automated testing**:
-   - Ensure no other services are running on ports 8080, 8123, 8124, and 8125
-   - The script attempts to clean up existing containers automatically
+# View service logs
+make logs
+```
 
-4. **Registry pull failures**:
-   - If `docker pull blnelson/firepowermockdataserver:latest` fails with network errors, the script uses local cache
-   - Use `--strict-registry` flag if you want to enforce latest version
-   - Manually pull image: `docker pull blnelson/firepowermockdataserver:latest`
+**Image pull failures**
 
-5. **Network issues**:
-   - The script creates a Docker network named 'net' if it doesn't exist
-   - If you encounter network conflicts, manually clean up: `docker network rm net`
+The Makefile includes automatic retry logic with exponential backoff (2s, 4s, 8s, 16s delays). If pulls continue to fail:
 
-6. **Container inspection after testing**:
-   ```bash
-   # View all containers (running and stopped)
-   docker ps -a
+```bash
+# Manually pull images
+docker pull ghcr.io/aertje/cloud-tasks-emulator:latest
 
-   # Check backend logs
-   docker logs watchgameupdates
+# Or retry with make
+make pull
+```
 
-   # Check game data emulator logs
-   docker logs firepowermockdataserver
+**Container health check failures**
 
-   # Access container shell for debugging
-   docker exec -it watchgameupdates /bin/sh
-   docker exec -it firepowermockdataserver /bin/sh
-   ```
+Services have health checks with 30 retries (up to 150 seconds). If services still fail:
+
+```bash
+# Check service status
+make status
+
+# View detailed logs
+make logs
+
+# Test endpoints manually
+curl http://localhost:8080
+curl http://localhost:8123
+```
 
 ### Debugging
 
-1. **Check service logs:**
-   ```bash
-   docker logs cloudtasks-emulator
-   docker logs sendgameupdates
-   ```
+```bash
+# View all container logs
+make logs
 
-2. **Verify network connectivity:**
-   ```bash
-   docker network inspect net
-   ```
+# View specific service logs
+make logs-backend
+make logs-cloudtasks
 
-3. **Test individual components:**
-   ```bash
-   # Test just the Go binary
-   cd watchgameupdates && ./watchgameupdates
-   ```
+# Get a shell in the backend container
+make shell-backend
 
-### Getting Help
+# Check container status
+docker compose ps
 
-- Check the logs for detailed error messages
-- Verify that all environment variables are properly set
-- Ensure Docker is running and accessible
-- Make sure the Cloud Tasks emulator is responding
-- Verify Go dependencies are correctly installed
+# Inspect container details
+docker inspect watchgameupdates
+```
+
+### Clean Restart
+
+If you encounter persistent issues:
+
+```bash
+# Stop and remove everything
+make clean-all
+
+# Restart from scratch
+make setup
+make home
+```
 
 ## API Reference
 
-### Main Service Endpoints
+### Backend Endpoints
 
-- **POST /** - Process game update requests
-  ```bash
-  curl -X POST http://localhost:8080 \
-    -H "Content-Type: application/json" \
-    -d '{"game_id": "2024030411", "execution_end": "2024-06-17T18:00:00Z"}'
-  ```
+**POST /** - Process game update request
+```bash
+curl -X POST http://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{"game_id": "2024030411", "execution_end": "2024-06-17T18:00:00Z"}'
+```
 
-### NHL API Integration
+### External APIs
 
-The service integrates with the NHL API:
-- **Schedule API**: `https://api-web.nhle.com/v1/score/{date}`
-- **Game Center API**: `https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play`
+**NHL Schedule API**
+```
+GET https://api-web.nhle.com/v1/score/{date}
+```
+
+**NHL Game Center API**
+```
+GET https://api-web.nhle.com/v1/gamecenter/{game_id}/play-by-play
+```
+
+**MoneyPuck Expected Goals API**
+```
+GET https://moneypuck.com/moneypuck/gameData/{season}/{game_id}.csv
+```
 
 ### Task Payload Format
 
@@ -460,11 +398,99 @@ The service integrates with the NHL API:
 }
 ```
 
+## Deployment
+
+### Containerized Deployment
+
+```bash
+cd watchgameupdates
+docker build -t crashthecrease-backend .
+docker run -p 8080:8080 crashthecrease-backend
+```
+
+### Google Cloud Platform
+
+The service is designed to deploy on:
+- **Google Cloud Run** - Containerized serverless deployment
+- **Google Cloud Functions** - Function-as-a-Service deployment
+- **Google Cloud Tasks** - Managed task queue service
+
+Update environment variables for production:
+- Remove `CLOUD_TASKS_EMULATOR_HOST` (use real Cloud Tasks)
+- Set proper `GCP_PROJECT_ID` and `GCP_LOCATION`
+- Configure production API endpoints
+- Set production Discord webhook URLs
+
+## Development Workflow
+
+### Making Changes
+
+1. Start development environment:
+   ```bash
+   make home
+   ```
+
+2. Make code changes in your editor
+
+3. Rebuild and restart:
+   ```bash
+   # Rebuild and restart all services
+   docker compose --profile home up -d --build
+
+   # Or use make
+   make stop
+   make home
+   ```
+
+4. View logs to verify changes:
+   ```bash
+   make logs-backend
+   ```
+
+5. Test your changes:
+   ```bash
+   make test
+   ```
+
+### Adding New Features
+
+1. Create new handlers in `internal/handlers/`
+2. Add business logic in `internal/services/`
+3. Define models in `internal/models/`
+4. Update configuration in `config/`
+5. Write tests alongside your code
+6. Update environment variables if needed
+
+## Legacy Scripts
+
+The following shell scripts are still available for reference but Docker Compose + Makefile is the recommended approach:
+
+- `setup-local.sh` - Legacy setup script (use `make setup && make home` instead)
+
 ## Contributing
 
-1. Ensure Go 1.23.3+ is installed
-2. Run `./setup-local.sh` to set up the development environment
+1. Fork the repository
+2. Create a feature branch
 3. Make your changes
-4. Run tests: `go test ./...`
-5. Test with the complete setup
+4. Run tests: `make test`
+5. Ensure code builds: `make build`
 6. Submit a pull request
+
+### Code Style
+
+- Follow Go standard formatting (`gofmt`)
+- Write tests for new functionality
+- Update documentation for user-facing changes
+- Keep commits focused and atomic
+
+## License
+
+[Your License Here]
+
+## Support
+
+For issues and questions:
+- Check the Troubleshooting section above
+- Run `make doctor` for diagnostics
+- Review container logs with `make logs`
+- Open an issue on GitHub

@@ -4,16 +4,24 @@
 # Automated Test Script for CrashTheCrease Backend
 #
 # This script automates the complete testing workflow by:
-# 1. Cleaning up existing containers
-# 2. Building and running all required containers
-# 3. Initiating the test sequence (optional)
-# 4. Monitoring logs for completion (optional)
-# 5. Cleaning up containers after test completion
+# 1. Fetching latest gameDataEmulator container from registry (with smart fallback)
+# 2. Cleaning up existing containers
+# 3. Building and running all required containers
+# 4. Initiating the test sequence (optional)
+# 5. Monitoring logs for completion (optional)
+# 6. Cleaning up containers after test completion
+#
+# Container Registry Management:
+#   - Automatically pulls latest gameDataEmulator from Docker Hub (blnelson/firepowermockdataserver)
+#   - Compares with local version and updates if different
+#   - Falls back to local cache on network errors
+#   - Removes old image versions to save space
 #
 # Usage:
 #   ./scripts/run_automated_test.sh                    # Full test execution (uses .env.local)
 #   ./scripts/run_automated_test.sh --containers-only  # Start containers only (uses .env.local)
-#   ./scripts/run_automated_test.sh --env-home         # Full test execution (uses .env.home)
+#   ./scripts/run_automated_test.sh --env-home         # Full test execution (uses .env.home, live APIs)
+#   ./scripts/run_automated_test.sh --strict-registry  # Fail if can't get latest from registry
 #   ./scripts/run_automated_test.sh --containers-only --env-home  # Start containers only (uses .env.home)
 ###############################################################################
 
@@ -29,9 +37,10 @@ NC='\033[0m' # No Color
 # Container and network names
 BACKEND_CONTAINER="watchgameupdates"
 BACKEND_IMAGE="watchgameupdates"
-TESTSERVER_CONTAINER="mockdataapi-testserver-1"
 CLOUDTASKS_CONTAINER="cloudtasks-emulator"
 CLOUDTASKS_IMAGE="ghcr.io/aertje/cloud-tasks-emulator:latest"
+EMULATOR_CONTAINER="firepowermockdataserver"
+EMULATOR_IMAGE="blnelson/firepowermockdataserver:latest"
 NETWORK_NAME="net"
 
 # Log monitoring settings
@@ -41,6 +50,7 @@ MAX_WAIT_TIME=900  # Maximum wait time in seconds (15 minutes)
 # Script configuration
 CONTAINERS_ONLY=false
 ENV_FILE=".env.local"  # Default environment file
+STRICT_REGISTRY=false  # Fail if can't get latest from registry
 
 ###############################################################################
 # Helper Functions
@@ -96,13 +106,131 @@ cleanup_all() {
 
     # Clean up individual containers (leave cloud tasks emulator running)
     cleanup_container "$BACKEND_CONTAINER"
+    cleanup_container "$EMULATOR_CONTAINER"
 
-    log_success "Backend containers cleaned up (cloud tasks emulator preserved)"
+    log_success "Test containers cleaned up (cloud tasks emulator preserved)"
 }
 
 ###############################################################################
 # Setup Functions
 ###############################################################################
+
+# Check if error is network-related
+is_network_error() {
+    local error_msg="$1"
+    # Common network error patterns
+    if echo "$error_msg" | grep -qiE "(connection refused|could not resolve host|network is unreachable|timeout|temporary failure|no route to host|connection timed out)"; then
+        return 0
+    fi
+    return 1
+}
+
+# Ensure we have the latest game data emulator container from registry
+ensure_emulator_container() {
+    log_info "Checking game data emulator container..."
+
+    # Check if image exists locally
+    local has_local=false
+    local local_digest=""
+    if docker image inspect "$EMULATOR_IMAGE" >/dev/null 2>&1; then
+        has_local=true
+        local_digest=$(docker image inspect "$EMULATOR_IMAGE" --format '{{index .RepoDigests 0}}' 2>/dev/null || echo "")
+        log_info "Found local image: $EMULATOR_IMAGE"
+        if [ -n "$local_digest" ]; then
+            log_info "Local digest: $local_digest"
+        fi
+    fi
+
+    # Try to pull the latest from registry
+    log_info "Attempting to pull latest image from registry..."
+    local pull_output
+    local pull_exit_code=0
+    pull_output=$(docker pull "$EMULATOR_IMAGE" 2>&1) || pull_exit_code=$?
+
+    if [ $pull_exit_code -eq 0 ]; then
+        log_success "Successfully pulled latest image from registry"
+
+        # Get new digest
+        local new_digest=$(docker image inspect "$EMULATOR_IMAGE" --format '{{index .RepoDigests 0}}' 2>/dev/null || echo "")
+
+        # Check if image changed
+        if [ "$has_local" = true ] && [ -n "$local_digest" ] && [ -n "$new_digest" ]; then
+            if [ "$local_digest" != "$new_digest" ]; then
+                log_info "New version detected (digest changed)"
+                log_info "Old: $local_digest"
+                log_info "New: $new_digest"
+
+                # Remove old image if it's different (cleanup old versions)
+                if [ -n "$local_digest" ]; then
+                    local old_image_id="${local_digest##*/}"
+                    log_info "Cleaning up old image version..."
+                    docker rmi "$old_image_id" >/dev/null 2>&1 || true
+                fi
+            else
+                log_info "Local image is already up to date"
+            fi
+        fi
+
+        return 0
+    fi
+
+    # Pull failed - check if it's a network error
+    if is_network_error "$pull_output"; then
+        log_warning "Network error while pulling image from registry"
+
+        if [ "$STRICT_REGISTRY" = true ]; then
+            log_error "Strict registry mode enabled - failing due to network error"
+            log_error "Error: $pull_output"
+            return 1
+        fi
+
+        # Network error - fall back to local if available
+        if [ "$has_local" = true ]; then
+            log_warning "Falling back to locally cached image due to network error"
+            log_info "Using local image: $EMULATOR_IMAGE"
+            return 0
+        else
+            log_error "No local image available and cannot reach registry due to network error"
+            log_error "Error: $pull_output"
+            return 1
+        fi
+    else
+        # Non-network error - always fail
+        log_error "Failed to pull image from registry (non-network error)"
+        log_error "Error: $pull_output"
+
+        if [ "$has_local" = true ] && [ "$STRICT_REGISTRY" = false ]; then
+            log_warning "Using local image despite registry error (non-strict mode)"
+            log_info "Using local image: $EMULATOR_IMAGE"
+            return 0
+        fi
+
+        return 1
+    fi
+}
+
+start_emulator() {
+    # Ensure we have the latest container
+    if ! ensure_emulator_container; then
+        log_error "Failed to ensure game data emulator container is available"
+        return 1
+    fi
+
+    log_info "Starting game data emulator container..."
+
+    if ! docker run -d \
+        --name "$EMULATOR_CONTAINER" \
+        --network "$NETWORK_NAME" \
+        -p 8124:8124 \
+        -p 8125:8125 \
+        "$EMULATOR_IMAGE" >/dev/null 2>&1; then
+        log_error "Failed to start game data emulator container"
+        return 1
+    fi
+
+    log_success "Game data emulator started"
+    return 0
+}
 
 create_network() {
     if ! network_exists "$NETWORK_NAME"; then
@@ -127,37 +255,6 @@ build_and_run_backend() {
         --env-file "watchgameupdates/$ENV_FILE" \
         "$BACKEND_IMAGE" >/dev/null 2>&1
     log_success "Backend container started"
-}
-
-start_testserver() {
-    log_info "Starting existing testserver container..."
-
-    # Check if the mockdataapi container exists
-    if ! container_exists "$TESTSERVER_CONTAINER"; then
-        log_error "Container '$TESTSERVER_CONTAINER' does not exist!"
-        log_error "Please ensure the mockdataapi container is built and available."
-        log_error "Expected container name: $TESTSERVER_CONTAINER"
-        exit 1
-    fi
-
-    # Start the container if it's not running
-    if ! container_running "$TESTSERVER_CONTAINER"; then
-        log_info "Starting container: $TESTSERVER_CONTAINER"
-        if ! docker start "$TESTSERVER_CONTAINER" >/dev/null 2>&1; then
-            log_error "Failed to start container: $TESTSERVER_CONTAINER"
-            exit 1
-        fi
-    else
-        log_info "Container $TESTSERVER_CONTAINER is already running"
-    fi
-
-    # Connect testserver container to our main network for inter-container communication
-    if ! docker network inspect "$NETWORK_NAME" --format '{{range .Containers}}{{.Name}} {{end}}' | grep -q "$TESTSERVER_CONTAINER"; then
-        log_info "Connecting $TESTSERVER_CONTAINER to network $NETWORK_NAME"
-        docker network connect "$NETWORK_NAME" "$TESTSERVER_CONTAINER" 2>/dev/null || true
-    fi
-
-    log_success "Testserver started"
 }
 
 start_cloudtasks_emulator() {
@@ -212,20 +309,20 @@ wait_for_services() {
     log_info "Waiting for services to be ready..."
     sleep 5  # Give services time to start up
 
-    # Check if testserver is responding (only if testserver is expected to be running)
+    # Check if emulator is responding (only if not using home environment)
     if [ "$ENV_FILE" != ".env.home" ]; then
         local retries=0
         local max_retries=30
         while ! curl -s http://localhost:8125/v1/gamecenter/test/play-by-play >/dev/null 2>&1; do
             retries=$((retries + 1))
             if [ $retries -gt $max_retries ]; then
-                log_warning "Testserver health check failed, continuing anyway..."
+                log_warning "Game data emulator health check failed, continuing anyway..."
                 break
             fi
             sleep 1
         done
     else
-        log_info "Skipping testserver health check (using live APIs)"
+        log_info "Skipping emulator health check (using live APIs)"
     fi
 
     # Check if backend is responding (expect 400/405 for GET request)
@@ -321,9 +418,9 @@ stop_all_containers() {
         docker stop "$BACKEND_CONTAINER" >/dev/null 2>&1 || true
     fi
 
-    # Stop testserver container
-    if container_running "$TESTSERVER_CONTAINER"; then
-        docker stop "$TESTSERVER_CONTAINER" >/dev/null 2>&1 || true
+    # Stop emulator container if running
+    if container_running "$EMULATOR_CONTAINER"; then
+        docker stop "$EMULATOR_CONTAINER" >/dev/null 2>&1 || true
     fi
 
     log_success "Test containers stopped (cloud tasks emulator left running)"
@@ -342,6 +439,10 @@ parse_flags() {
                 ;;
             --env-home)
                 ENV_FILE=".env.home"
+                shift
+                ;;
+            --strict-registry)
+                STRICT_REGISTRY=true
                 shift
                 ;;
             -h|--help)
@@ -363,12 +464,21 @@ show_help() {
     echo "Options:"
     echo "  --containers-only    Start containers only and keep running until manually stopped"
     echo "  --env-home          Use .env.home instead of .env.local for backend container"
+    echo "  --strict-registry   Fail if unable to fetch latest container from registry for any reason"
     echo "  -h, --help          Show this help message"
+    echo ""
+    echo "Container Registry Behavior:"
+    echo "  By default, the script tries to pull the latest gameDataEmulator from Docker Hub."
+    echo "  - If successful: uses the latest image, removes old local versions"
+    echo "  - If network error: falls back to local cached image (or fails if none)"
+    echo "  - If other error: uses local cached image in non-strict mode"
+    echo "  - With --strict-registry: fails immediately if unable to get latest for any reason"
     echo ""
     echo "Examples:"
     echo "  $0                              # Run full automated test (uses .env.local)"
     echo "  $0 --containers-only           # Start containers and keep running (uses .env.local)"
     echo "  $0 --env-home                  # Run full automated test (uses .env.home)"
+    echo "  $0 --strict-registry           # Run test, fail if can't get latest emulator"
     echo "  $0 --containers-only --env-home # Start containers and keep running (uses .env.home)"
 }
 
@@ -377,7 +487,7 @@ wait_for_interrupt() {
     log_info "Services available at:"
     log_info "  • Backend: http://localhost:8080"
     if [ "$ENV_FILE" != ".env.home" ]; then
-        log_info "  • Testserver: http://localhost:8125"
+        log_info "  • Game Data Emulator: http://localhost:8125 (play-by-play), http://localhost:8124 (stats)"
     fi
     log_info "  • Cloud Tasks Emulator: http://localhost:8123"
     echo ""
@@ -420,11 +530,15 @@ main() {
     # Step 3: Build and start all services
     build_and_run_backend
 
-    # Only start testserver if not using home environment (which uses live APIs)
+    # Only start emulator if not using home environment (which uses live APIs)
     if [ "$ENV_FILE" != ".env.home" ]; then
-        start_testserver
+        if ! start_emulator; then
+            log_error "Failed to start game data emulator"
+            stop_all_containers
+            exit 1
+        fi
     else
-        log_info "Skipping testserver (using live APIs with .env.home)"
+        log_info "Skipping game data emulator (using live APIs with .env.home)"
     fi
 
     start_cloudtasks_emulator
@@ -447,7 +561,9 @@ main() {
             log_error "Test execution failed or timed out"
             log_info "Check container logs for more details:"
             log_info "  Backend: docker logs $BACKEND_CONTAINER"
-            log_info "  Testserver: docker logs $TESTSERVER_CONTAINER"
+            if [ "$ENV_FILE" != ".env.home" ]; then
+                log_info "  Game Data Emulator: docker logs $EMULATOR_CONTAINER"
+            fi
             stop_all_containers
             exit 1
         fi
@@ -461,7 +577,7 @@ main() {
         echo "📋 What was tested:"
         echo "  ✓ Backend container built and started"
         if [ "$ENV_FILE" != ".env.home" ]; then
-            echo "  ✓ Testserver provided mock NHL and MoneyPuck API data"
+            echo "  ✓ Game data emulator provided mock NHL and MoneyPuck API data"
         else
             echo "  ✓ Backend used live NHL and MoneyPuck API data"
         fi
@@ -472,12 +588,12 @@ main() {
         echo "🔍 Test containers are stopped but preserved for inspection:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
         if [ "$ENV_FILE" != ".env.home" ]; then
-            echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
+            echo "  • Game Data Emulator logs: docker logs $EMULATOR_CONTAINER"
         fi
         echo ""
         echo "🧹 To clean up stopped test containers:"
         if [ "$ENV_FILE" != ".env.home" ]; then
-            echo "  docker rm $BACKEND_CONTAINER $TESTSERVER_CONTAINER"
+            echo "  docker rm $BACKEND_CONTAINER $EMULATOR_CONTAINER"
         else
             echo "  docker rm $BACKEND_CONTAINER"
         fi
@@ -499,10 +615,16 @@ cleanup_on_interrupt() {
         echo ""
         echo "🔍 To inspect stopped containers:"
         echo "  • Backend logs: docker logs $BACKEND_CONTAINER"
-        echo "  • Testserver logs: docker logs $TESTSERVER_CONTAINER"
+        if [ "$ENV_FILE" != ".env.home" ]; then
+            echo "  • Game Data Emulator logs: docker logs $EMULATOR_CONTAINER"
+        fi
         echo ""
         echo "🗑️ To remove stopped containers:"
-        echo "  docker rm $BACKEND_CONTAINER $TESTSERVER_CONTAINER"
+        if [ "$ENV_FILE" != ".env.home" ]; then
+            echo "  docker rm $BACKEND_CONTAINER $EMULATOR_CONTAINER"
+        else
+            echo "  docker rm $BACKEND_CONTAINER"
+        fi
         echo ""
         echo "ℹ️  Cloud tasks emulator left running at http://localhost:8123"
         echo "   To stop it manually: docker stop $CLOUDTASKS_CONTAINER"

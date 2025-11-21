@@ -376,15 +376,6 @@ build-backend: check-go ## Build backend binary only
 	@go run build.go -target watchgameupdates
 	@printf "$(GREEN)[SUCCESS]$(NC) Backend binary built: ./bin/watchgameupdates\n"
 
-build-testserver: check-go ## Build testserver binary (if testserver exists)
-	@if [ -d "testserver" ]; then \
-		printf "$(BLUE)[INFO]$(NC) Building testserver binary...\n"; \
-		go run build.go -target testserver; \
-		printf "$(GREEN)[SUCCESS]$(NC) Testserver binary built: ./bin/testserver\n"; \
-	else \
-		printf "$(YELLOW)[WARNING]$(NC) testserver directory not found (removed in commit 606aa80)\n"; \
-		printf "$(YELLOW)[WARNING]$(NC) Skipping testserver build\n"; \
-	fi
 
 ##@ Utilities
 

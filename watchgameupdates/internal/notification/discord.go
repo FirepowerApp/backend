@@ -14,9 +14,10 @@ import (
 )
 
 type DiscordNotifier struct {
-	session   *discordgo.Session
-	channelID string
-	token     string
+	session          *discordgo.Session
+	channelID        string
+	token            string
+	requiredDataKeys []string
 }
 
 func NewDiscordNotifier(config NotifierConfig) (*DiscordNotifier, error) {
@@ -34,11 +35,23 @@ func NewDiscordNotifier(config NotifierConfig) (*DiscordNotifier, error) {
 		return nil, fmt.Errorf("failed to create Discord session: %w", err)
 	}
 
+	requiredDataKeys := []string{
+		"homeTeamExpectedGoals",
+		"awayTeamExpectedGoals",
+		"homeTeamGoals",
+		"awayTeamGoals",
+	}
+
 	return &DiscordNotifier{
-		session:   session,
-		channelID: channelID,
-		token:     token,
+		session:          session,
+		channelID:        channelID,
+		token:            token,
+		requiredDataKeys: requiredDataKeys,
 	}, nil
+}
+
+func (d *DiscordNotifier) GetRequiredDataKeys() []string {
+	return d.requiredDataKeys
 }
 
 // SendNotification sends a single notification to Discord

@@ -10,6 +10,7 @@ import (
 
 type GameDataFetcher interface {
 	FetchGameData(gameID string) ([][]string, error)
+	FetchAndParseGameData(gameID string, requiredKeys []string) (map[string]string, error)
 	GetColumnValue(statColumn string, records [][]string) (string, error)
 	GetTeamNames(records [][]string) (homeTeam, awayTeam string, err error)
 }
@@ -129,4 +130,24 @@ func (f *HTTPGameDataFetcher) FetchGameData(gameID string) ([][]string, error) {
 
 	log.Printf("INFO: Successfully parsed CSV data for game %s - %d total records", gameID, len(records))
 	return records, nil
+}
+
+func (f *HTTPGameDataFetcher) FetchAndParseGameData(gameID string, requiredKeys []string) (map[string]string, error) {
+	records, err := f.FetchGameData(gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	data := make(map[string]string)
+
+	for _, key := range requiredKeys {
+		value, err := f.GetColumnValue(key, records)
+		if err != nil {
+			log.Printf("WARNING: Could not extract value for key '%s': %v", key, err)
+			continue
+		}
+		data[key] = value
+	}
+
+	return data, nil
 }

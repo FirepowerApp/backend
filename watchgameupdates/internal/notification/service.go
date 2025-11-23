@@ -7,8 +7,9 @@ import (
 )
 
 type Service struct {
-	notifiers []Notifier
-	config    ServiceConfig
+	notifiers           []Notifier
+	config              ServiceConfig
+	allRequiredDataKeys []string
 }
 
 type ServiceConfig struct {
@@ -42,8 +43,13 @@ func NewServiceWithConfig(config ServiceConfig) *Service {
 	return service
 }
 
+func (s *Service) GetAllRequiredDataKeys() []string {
+	return s.allRequiredDataKeys
+}
+
 func (s *Service) discoverNotifiers() {
 	if discordNotifier := s.tryCreateDiscordNotifier(); discordNotifier != nil {
+		s.allRequiredDataKeys = append(s.allRequiredDataKeys, discordNotifier.GetRequiredDataKeys()...)
 		s.notifiers = append(s.notifiers, discordNotifier)
 	}
 }

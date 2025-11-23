@@ -56,60 +56,18 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 		"goal":         {},
 	}
 	lastPlay := services.FetchPlayByPlay(payload.Game.ID)
-	homeTeamExpectedGoals := ""
-	awayTeamExpectedGoals := ""
 
 	if _, ok := recomputeTypes[lastPlay.TypeDescKey]; ok {
 		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlay.TypeDescKey, payload.Game.ID)
 
-		records, err := fetcher.FetchGameData(payload.Game.ID)
+		requiredKeys := notificationService.GetAllRequiredDataKeys()
+
+		gameData, err := fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
 		if err != nil {
-			log.Printf("ERROR: Failed to fetch MoneyPuck data for game %s: %v", payload.Game.ID, err)
-			homeTeamExpectedGoals = "-1"
-			awayTeamExpectedGoals = "-1"
-		} else {
-			// Log CSV structure for debugging
-			if len(records) > 0 {
-				log.Printf("MoneyPuck CSV structure - Columns: %d, Rows: %d", len(records[0]), len(records))
-				log.Printf("Available columns: %v", records[0])
-				if len(records) > 1 {
-					log.Printf("Sample data row: %v", records[len(records)-1])
-				}
-			} else {
-				log.Printf("WARNING: No data rows returned from MoneyPuck for game %s", payload.Game.ID)
-			}
-
-			homeTeamExpectedGoals, err = fetcher.GetColumnValue("homeTeamExpectedGoals", records)
-			if err != nil {
-				log.Printf("WARNING: Could not extract homeTeamExpectedGoals: %v", err)
-			}
-
-			awayTeamExpectedGoals, err = fetcher.GetColumnValue("awayTeamExpectedGoals", records)
-			if err != nil {
-				log.Printf("WARNING: Could not extract awayTeamExpectedGoals: %v", err)
-			}
+			log.Printf("ERROR: Failed to fetch and parse MoneyPuck data for game %s: %v", payload.Game.ID, err)
 		}
 
-		if homeTeamExpectedGoals != "" || awayTeamExpectedGoals != "" {
-			log.Printf("Got new values for GameID: %s, Home Team Expected Goals: %s, Away Team Expected Goals: %s", payload.Game.ID, homeTeamExpectedGoals, awayTeamExpectedGoals)
-
-			// Get team names from the payload instead of trying to extract from MoneyPuck data
-			homeTeam := payload.Game.HomeTeam.CommonName["default"]
-			awayTeam := payload.Game.AwayTeam.CommonName["default"]
-			if homeTeam == "" {
-				homeTeam = "Home Team"
-			}
-			if awayTeam == "" {
-				awayTeam = "Away Team"
-			}
-
-			// Extract current scores from MoneyPuck data
-			homeTeamGoals, _ := fetcher.GetColumnValue("homeTeamGoals", records)
-			awayTeamGoals, _ := fetcher.GetColumnValue("awayTeamGoals", records)
-
-			// Send notification using the provided notifier
-			notificationService.SendGameUpdate(homeTeam, awayTeam, homeTeamExpectedGoals, awayTeamExpectedGoals, homeTeamGoals, awayTeamGoals)
-		}
+		notificationService.SendGameEventNotifications(payload.Game, gameData)
 	}
 
 	shouldReschedule := services.ShouldReschedule(payload, lastPlay)

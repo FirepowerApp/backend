@@ -4,39 +4,18 @@ import (
 	"context"
 	"log"
 	"time"
+
+	. "watchgameupdates/internal/models"
 )
 
 type Service struct {
 	notifiers           []Notifier
-	config              ServiceConfig
 	allRequiredDataKeys []string
-}
-
-type ServiceConfig struct {
-	RecomputeTypes map[string]struct{}
 }
 
 func NewService() *Service {
 	service := &Service{
 		notifiers: []Notifier{},
-		config: ServiceConfig{
-			RecomputeTypes: map[string]struct{}{
-				"blocked-shot": {},
-				"missed-shot":  {},
-				"shot-on-goal": {},
-				"goal":         {},
-			},
-		},
-	}
-
-	service.discoverNotifiers()
-	return service
-}
-
-func NewServiceWithConfig(config ServiceConfig) *Service {
-	service := &Service{
-		notifiers: []Notifier{},
-		config:    config,
 	}
 
 	service.discoverNotifiers()
@@ -71,9 +50,25 @@ func (s *Service) tryCreateDiscordNotifier() Notifier {
 	return notifier
 }
 
-func (s *Service) ShouldRecomputeExpectedGoals(eventType string) bool {
-	_, exists := s.config.RecomputeTypes[eventType]
-	return exists
+func (s *Service) SendGameEventNotifications(game Game, gameData map[string]string) {
+	for i, notifier := range s.notifiers {
+		data := map[string]string{}
+		for _, key := range notifier.GetRequiredDataKeys() {
+			if val, ok := gameData[key]; ok {
+				data[key] = val
+			} else {
+				log.Printf("WARNING: Required data key '%s' not found in game data for notifier %d", key, i)
+			}
+		}
+
+		req := NotificationRequest{
+			Team1ID: game.HomeTeam.CommonName["default"],
+			Team2ID: game.AwayTeam.CommonName["default"],
+			Data:    data,
+		}
+
+		go s.sendToNotifier(notifier, req, i)
+	}
 }
 
 func (s *Service) SendGameUpdate(homeTeam, awayTeam, homeXG, awayXG, homeGoals, awayGoals string) {

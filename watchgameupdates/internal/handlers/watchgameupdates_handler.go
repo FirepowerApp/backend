@@ -76,23 +76,6 @@ func WatchGameUpdatesHandler(
 	}
 }
 
-func parseRequestPayload(r *http.Request) (models.Payload, error) {
-	var payload models.Payload
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return payload, fmt.Errorf("failed to read request body: %w", err)
-	}
-
-	log.Printf("Raw body: %s", body)
-
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return payload, fmt.Errorf("invalid request payload: %w", err)
-	}
-
-	return payload, nil
-}
-
 func shouldSkipExecution(payload models.Payload) (bool, error) {
 	if payload.ExecutionEnd != nil {
 		executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)

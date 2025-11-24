@@ -17,9 +17,6 @@ type Config struct {
 	MessageIntervalSeconds int
 }
 
-// TODO: Add support for customizable time between data queries
-// (to prevent long delays between events during local scenario testing)
-
 func LoadConfig() *Config {
 	return &Config{
 		Env:               os.Getenv("APP_ENV"),

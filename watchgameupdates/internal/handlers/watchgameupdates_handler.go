@@ -131,7 +131,8 @@ func scheduleNextCheck(payload models.Payload) error {
 	}
 	defer tasksClient.Close()
 
-	scheduleTime := timestamppb.New(time.Now().Add(60 * time.Second))
+	messageInterval := time.Duration(cfg.MessageIntervalSeconds) * time.Second
+	scheduleTime := timestamppb.New(time.Now().Add(messageInterval))
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {

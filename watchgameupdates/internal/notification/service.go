@@ -11,11 +11,17 @@ import (
 type Service struct {
 	notifiers           []Notifier
 	allRequiredDataKeys []string
+	shouldNotify        bool
 }
 
 func NewService() *Service {
+	return NewServiceWithNotificationFlag(true) // Default to true for backward compatibility
+}
+
+func NewServiceWithNotificationFlag(shouldNotify bool) *Service {
 	service := &Service{
-		notifiers: []Notifier{},
+		notifiers:    []Notifier{},
+		shouldNotify: shouldNotify,
 	}
 
 	service.discoverNotifiers()
@@ -51,6 +57,11 @@ func (s *Service) tryCreateDiscordNotifier() Notifier {
 }
 
 func (s *Service) SendGameEventNotifications(game Game, gameData map[string]string) {
+	if !s.shouldNotify {
+		log.Printf("Notifications disabled for this service instance, skipping game event notifications")
+		return
+	}
+
 	for i, notifier := range s.notifiers {
 		data := map[string]string{}
 		for _, key := range notifier.GetRequiredDataKeys() {
@@ -72,6 +83,11 @@ func (s *Service) SendGameEventNotifications(game Game, gameData map[string]stri
 }
 
 func (s *Service) SendGameUpdate(homeTeam, awayTeam, homeXG, awayXG, homeGoals, awayGoals string) {
+	if !s.shouldNotify {
+		log.Printf("Notifications disabled for this service instance, skipping game update notifications")
+		return
+	}
+
 	if len(s.notifiers) == 0 {
 		log.Printf("No notifiers configured, skipping notification")
 		return

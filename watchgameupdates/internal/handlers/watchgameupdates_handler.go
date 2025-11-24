@@ -19,7 +19,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher services.GameDataFetcher, notificationService *notification.Service) {
+func WatchGameUpdatesHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+	fetcher services.GameDataFetcher,
+	notificationService *notification.Service,
+	payload models.Payload) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -28,25 +33,14 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 
 	log.Printf("Raw body: %s", body)
 
-	var payload models.Payload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+	executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
+	if err != nil {
+		http.Error(w, "Invalid scheduled_time format", http.StatusBadRequest)
 		return
 	}
-
-	if payload.ExecutionEnd != nil {
-		executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
-		if err != nil {
-			http.Error(w, "Invalid scheduled_time format", http.StatusBadRequest)
-			return
-		}
-
-		if time.Now().After(executionEnd) {
-			log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
-			return
-		}
-	} else {
-		log.Println("Max execution time not set, proceeding without time check.")
+	if time.Now().After(executionEnd) {
+		log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
+		return
 	}
 
 	recomputeTypes := map[string]struct{}{

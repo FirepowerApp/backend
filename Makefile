@@ -123,6 +123,8 @@ home: check-docker ## Start home environment with live APIs (.env.home)
 	@printf "$(BLUE)[INFO]$(NC) Starting home environment (live APIs)...\n"
 	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
 	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Ensuring fresh backend build by removing cached image...\n"
+	@docker rmi -f watchgameupdates:latest 2>/dev/null || true
 	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
 	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_HOME) build --progress=plain 2>&1 | tee /tmp/build.log; then \
 		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
@@ -146,6 +148,8 @@ test-containers: check-docker ## Start test containers and keep running (.env.lo
 	@printf "$(BLUE)[INFO]$(NC) Starting test containers (mock APIs)...\n"
 	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
 	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Ensuring fresh backend build by removing cached image...\n"
+	@docker rmi -f watchgameupdates:latest 2>/dev/null || true
 	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
 	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) build --progress=plain 2>&1 | tee /tmp/build.log; then \
 		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
@@ -180,6 +184,8 @@ test: check-docker ## Run full automated integration test
 	@printf "==================================================\n\n"
 	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
 	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Ensuring fresh backend build by removing cached image...\n"
+	@docker rmi -f watchgameupdates:latest 2>/dev/null || true
 	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
 	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) build --progress=plain 2>&1 | tee /tmp/build.log; then \
 		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \

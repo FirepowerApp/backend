@@ -27,17 +27,20 @@ x-healthcheck-defaults: &healthcheck-defaults
   start_period: 10s
 
 services:
-  # Cloud Tasks Emulator - Always available, persisted across runs
-  cloudtasks-emulator:
+  # Redis - Message queue and task scheduler
+  redis:
     <<: *common-settings
-    image: ghcr.io/aertje/cloud-tasks-emulator:latest
-    command: --host=0.0.0.0
+    image: redis:7-alpine
+    container_name: redis
     ports:
-      - "8123:8123"
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --appendfsync everysec
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8123 || exit 1"]
-    # Emulator persists across runs - only stopped manually or with 'docker compose down'
+      test: ["CMD", "redis-cli", "ping"]
+    # Redis persists across runs - only stopped manually or with 'docker compose down'
     restart: unless-stopped
     profiles:
       - home
@@ -61,8 +64,8 @@ services:
       # Override with environment-specific settings
       - PORT=8080
     depends_on:
-      cloudtasks-emulator:
-        condition: service_started
+      redis:
+        condition: service_healthy
     healthcheck:
       <<: *healthcheck-defaults
       # Backend returns 400/405 for GET requests, which is expected
@@ -94,3 +97,7 @@ services:
 networks:
   net:
     driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

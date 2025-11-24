@@ -6,23 +6,22 @@ import (
 )
 
 type Config struct {
-	Env               string
-	ProjectID         string
-	QueueID           string
-	LocationID        string
-	UseEmulator       bool
-	CloudTasksAddress string
-	HandlerAddress    string
+	Env            string
+	RedisAddress   string
+	RedisPassword  string
+	HandlerAddress string // For logging/monitoring
 }
 
 func LoadConfig() *Config {
+	redisAddr := os.Getenv("REDIS_ADDRESS")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379" // Default for local dev
+	}
+
 	return &Config{
-		Env:               os.Getenv("APP_ENV"),
-		ProjectID:         os.Getenv("GCP_PROJECT_ID"),
-		QueueID:           os.Getenv("CLOUD_TASKS_QUEUE"),
-		LocationID:        os.Getenv("GCP_LOCATION"),
-		UseEmulator:       os.Getenv("USE_TASKS_EMULATOR") == "true",
-		CloudTasksAddress: os.Getenv("CLOUD_TASKS_EMULATOR_HOST"), // only in dev
-		HandlerAddress:    os.Getenv("HANDLER_HOST"),
+		Env:            os.Getenv("APP_ENV"),
+		RedisAddress:   redisAddr,
+		RedisPassword:  os.Getenv("REDIS_PASSWORD"),
+		HandlerAddress: os.Getenv("HANDLER_HOST"),
 	}
 }

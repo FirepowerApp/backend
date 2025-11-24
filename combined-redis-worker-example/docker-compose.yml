@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # Combined Redis + Worker container
+  redis-worker:
+    build:
+      context: ./watchgameupdates
+      dockerfile: Dockerfile.combined
+    image: redis-worker:latest
+    container_name: redis-worker
+    ports:
+      - "6379:6379"
+    env_file:
+      - ./watchgameupdates/.env.local
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      # Check both Redis and worker are running
+      test: ["CMD-SHELL", "redis-cli ping && pgrep -x worker"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - net
+
+  # Backend can connect to redis-worker:6379
+  backend:
+    build:
+      context: ./watchgameupdates
+      dockerfile: Dockerfile
+    image: watchgameupdates:latest
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./watchgameupdates/.env.local
+    environment:
+      - REDIS_ADDRESS=redis-worker:6379
+    depends_on:
+      redis-worker:
+        condition: service_healthy
+    networks:
+      - net
+
+volumes:
+  redis-data:
+
+networks:
+  net:
+    driver: bridge

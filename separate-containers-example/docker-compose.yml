@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # Redis - Just data storage
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+    networks:
+      - net
+    # Resource limits for Redis specifically
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # Worker - Just task processing
+  worker:
+    build:
+      context: ./watchgameupdates
+      dockerfile: Dockerfile.worker
+    image: watchgameupdates-worker:latest
+    env_file:
+      - ./watchgameupdates/.env.local
+    environment:
+      - REDIS_ADDRESS=redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - net
+    # Resource limits for worker specifically
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+      # Scale workers independently!
+      replicas: 3
+
+  # Backend - HTTP handler + task producer
+  backend:
+    build:
+      context: ./watchgameupdates
+      dockerfile: Dockerfile
+    image: watchgameupdates:latest
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./watchgameupdates/.env.local
+    environment:
+      - REDIS_ADDRESS=redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - net
+
+volumes:
+  redis-data:
+
+networks:
+  net:
+    driver: bridge

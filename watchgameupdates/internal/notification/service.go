@@ -113,7 +113,8 @@ func (s *Service) sendToNotifier(notifier Notifier, req NotificationRequest, ind
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	resultChan, err := notifier.SendNotification(ctx, req)
+	message := notifier.FormatMessage(req)
+	resultChan, err := notifier.SendNotification(ctx, message)
 	if err != nil {
 		log.Printf("Notifier %d failed to send notification: %v", index, err)
 		return

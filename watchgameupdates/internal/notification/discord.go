@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -40,6 +38,8 @@ func NewDiscordNotifier(config NotifierConfig) (*DiscordNotifier, error) {
 		"awayTeamExpectedGoals",
 		"homeTeamGoals",
 		"awayTeamGoals",
+		"homeTeamShootOutGoals",
+		"awayTeamShootOutGoals",
 	}
 
 	return &DiscordNotifier{
@@ -55,7 +55,7 @@ func (d *DiscordNotifier) GetRequiredDataKeys() []string {
 }
 
 // SendNotification sends a single notification to Discord
-func (d *DiscordNotifier) SendNotification(ctx context.Context, req NotificationRequest) (<-chan NotificationResult, error) {
+func (d *DiscordNotifier) SendNotification(ctx context.Context, message string) (<-chan NotificationResult, error) {
 	resultChan := make(chan NotificationResult, 1)
 	notificationID := uuid.New().String()
 
@@ -78,8 +78,8 @@ func (d *DiscordNotifier) SendNotification(ctx context.Context, req Notification
 			}
 		}
 
-		// Format the message
-		message := d.formatMessage(req)
+		// Log message content
+		log.Printf("Sending Discord message: %s", message)
 
 		// Send the message
 		_, err := d.session.ChannelMessageSend(d.channelID, message)
@@ -97,70 +97,6 @@ func (d *DiscordNotifier) SendNotification(ctx context.Context, req Notification
 	return resultChan, nil
 }
 
-// SendBatch sends multiple notifications as a batch (processes them sequentially)
-func (d *DiscordNotifier) SendBatch(ctx context.Context, batch NotificationBatch) (<-chan NotificationResult, error) {
-	resultChan := make(chan NotificationResult, len(batch.Requests))
-
-	go func() {
-		defer close(resultChan)
-
-		// Open connection once for the batch
-		if d.session.State == nil {
-			if err := d.session.Open(); err != nil {
-				// Send error result for all requests in the batch
-				for range batch.Requests {
-					resultChan <- NotificationResult{
-						ID:        uuid.New().String(),
-						Success:   false,
-						Error:     fmt.Errorf("failed to open Discord connection: %w", err),
-						Timestamp: time.Now(),
-					}
-				}
-				return
-			}
-		}
-
-		// Process each notification in the batch
-		for _, req := range batch.Requests {
-			select {
-			case <-ctx.Done():
-				// Context cancelled, stop processing
-				resultChan <- NotificationResult{
-					ID:        uuid.New().String(),
-					Success:   false,
-					Error:     ctx.Err(),
-					Timestamp: time.Now(),
-				}
-				return
-			default:
-				notificationID := uuid.New().String()
-				result := NotificationResult{
-					ID:        notificationID,
-					Timestamp: time.Now(),
-				}
-
-				// Format and send the message
-				message := d.formatMessage(req)
-				_, err := d.session.ChannelMessageSend(d.channelID, message)
-				if err != nil {
-					result.Error = fmt.Errorf("failed to send Discord message: %w", err)
-					result.Success = false
-				} else {
-					result.Success = true
-					log.Printf("Discord batch notification sent successfully: %s", notificationID)
-				}
-
-				resultChan <- result
-
-				// Small delay between messages to avoid rate limiting
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
-	}()
-
-	return resultChan, nil
-}
-
 // Close cleanly shuts down the Discord notifier
 func (d *DiscordNotifier) Close() error {
 	if d.session != nil {
@@ -170,35 +106,31 @@ func (d *DiscordNotifier) Close() error {
 }
 
 // formatMessage creates a formatted Discord message from the notification request
-func (d *DiscordNotifier) formatMessage(req NotificationRequest) string {
-	var builder strings.Builder
+func (d *DiscordNotifier) FormatMessage(req NotificationRequest) string {
+	message := ""
 
-	// Header with team information
-	builder.WriteString(fmt.Sprintf("🏒 **Game Update: %s vs %s**\n\n", req.Team1ID, req.Team2ID))
+	homeGoals, hasHomeGoals := req.Data["homeTeamGoals"]
+	awayGoals, hasAwayGoals := req.Data["awayTeamGoals"]
+	homeXG, hasHomeXG := req.Data["homeTeamExpectedGoals"]
+	awayXG, hasAwayXG := req.Data["awayTeamExpectedGoals"]
 
-	// Add data dictionary information
-	if len(req.Data) > 0 {
-		builder.WriteString("📊 Game Statistics:\n")
-		for key, value := range req.Data {
-			// Format the key to be more readable (replace underscores/dashes with spaces, capitalize)
-			displayKey := strings.ReplaceAll(strings.ReplaceAll(key, "_", " "), "-", " ")
-			displayKey = strings.Title(strings.ToLower(displayKey))
+	if hasHomeGoals && hasAwayGoals {
+		message += "🏒 Current Score: " + req.Team1ID + " " + homeGoals + " - " + awayGoals + " " + req.Team2ID + "\n\n"
+	}
 
-			// Format the value appropriately
-			value, _ := strconv.ParseFloat(value, 64)
-			if value == float64(int64(value)) {
-				// Display as integer if it's a whole number
-				builder.WriteString(fmt.Sprintf("• %s: %d\n", displayKey, int64(value)))
-			} else {
-				// Display with 2 decimal places for non-whole numbers
-				builder.WriteString(fmt.Sprintf("• %s: %.2f\n", displayKey, value))
-			}
+	// Show expected goals if available
+	if hasHomeXG || hasAwayXG {
+		message += "📊 Expected Goals:\n"
+		if hasHomeXG {
+			message += "• " + req.Team1ID + ": " + homeXG + "\n"
+		}
+		if hasAwayXG {
+			message += "• " + req.Team2ID + ": " + awayXG + "\n"
 		}
 	}
 
-	builder.WriteString(fmt.Sprintf("\n*Notification sent at %s*", time.Now().Format("15:04:05 MST")))
-
-	return builder.String()
+	message += "\n*Notification sent at " + time.Now().Format("15:04:05 MST") + "*"
+	return message
 }
 
 // LoadDiscordConfigFromEnv loads Discord configuration from environment variables

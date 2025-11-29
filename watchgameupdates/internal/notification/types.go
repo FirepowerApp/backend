@@ -23,9 +23,9 @@ type NotificationBatch struct {
 }
 
 type Notifier interface {
-	SendNotification(ctx context.Context, req NotificationRequest) (<-chan NotificationResult, error)
-	SendBatch(ctx context.Context, batch NotificationBatch) (<-chan NotificationResult, error)
+	SendNotification(ctx context.Context, message string) (<-chan NotificationResult, error)
 	GetRequiredDataKeys() []string
+	FormatMessage(req NotificationRequest) string
 	Close() error
 }
 

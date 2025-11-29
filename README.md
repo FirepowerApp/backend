@@ -171,6 +171,9 @@ Start the test environment and run tests manually:
 # Start containers
 make test-containers
 
+# Or use a locally built mock API image
+make test-containers LOCAL_MOCK=true
+
 # In another terminal, run test client
 cd localCloudTasksTest
 ./localCloudTasksTest
@@ -193,6 +196,39 @@ go test -cover ./...
 
 # Test specific package
 go test ./watchgameupdates/internal/services/...
+```
+
+### Test Commands
+
+**Specific test function:**
+```bash
+cd watchgameupdates && go test -v -run TestDiscordNotifier_FormatMessage ./internal/notification
+```
+
+**Specific sub-test (individual test case):**
+```bash
+cd watchgameupdates && go test -v -run TestDiscordNotifier_FormatMessage/TiedGoals_HomeWinsShootout ./internal/notification
+```
+
+**All tests in a package:**
+```bash
+cd watchgameupdates && go test -v ./internal/notification
+```
+
+**All tests in the entire project:**
+```bash
+cd watchgameupdates && go test -v ./...
+```
+
+**Tests with coverage:**
+```bash
+cd watchgameupdates && go test -v -cover ./internal/notification
+```
+
+**Generate coverage report:**
+```bash
+cd watchgameupdates && go test -v -coverprofile=coverage.out ./internal/notification
+cd watchgameupdates && go tool cover -html=coverage.out
 ```
 
 ## Architecture

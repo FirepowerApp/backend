@@ -103,6 +103,24 @@ make test-containers
 
 Configuration: `watchgameupdates/.env.local`
 
+**Using a Locally Built Mock API:**
+
+If you're developing changes to the mock data server, you can use a locally built image instead of pulling from the registry:
+
+```bash
+# First, build your local mock API image
+cd /path/to/your/mockdataserver
+docker build -t mockdataapi:latest .
+
+# Then run test containers with the local image
+make test-containers LOCAL_MOCK=true
+
+# Or run full automated tests with the local image
+make test LOCAL_MOCK=true
+```
+
+The `LOCAL_MOCK=true` flag tells the system to use your locally built `mockdataapi:latest` image instead of pulling `blnelson/firepowermockdataserver:latest` from the registry. This is useful for testing changes to the mock API without needing to push to a registry.
+
 ### Configuration
 
 Environment files are located in `watchgameupdates/`:

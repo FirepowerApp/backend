@@ -19,4 +19,5 @@ type Game struct {
 type Payload struct {
 	Game         Game    `json:"game"`
 	ExecutionEnd *string `json:"execution_end,omitempty"`
+	ShouldNotify *bool   `json:"should_notify,omitempty"`
 }

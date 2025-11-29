@@ -1,34 +1,47 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"watchgameupdates/internal/handlers"
+	"watchgameupdates/internal/models"
+	"watchgameupdates/internal/notification"
 	"watchgameupdates/internal/services"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/funcframework"
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	// Initialize dependencies
-	recomputeTypes := map[string]struct{}{
-		"blocked-shot": {},
-		"missed-shot":  {},
-		"shot-on-goal": {},
-		"goal":         {},
-	}
 	fetcher := &services.HTTPGameDataFetcher{}
 
-	// Initialize the notifier - you can easily swap this for a different implementation
-	notifier, err := handlers.NewDiscordNotifier()
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Printf("Failed to create notifier: %v", err)
-		// Continue without notifications rather than failing
-		notifier = nil
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var payload models.Payload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	var notificationService *notification.Service
+	if payload.ShouldNotify != nil {
+		notificationService = notification.NewServiceWithNotificationFlag(*payload.ShouldNotify)
+	} else {
+		notificationService = notification.NewService()
 	}
 
 	// Call the handler
-	handlers.WatchGameUpdatesHandler(w, r, fetcher, recomputeTypes, notifier)
+	handlers.WatchGameUpdatesHandler(
+		w,
+		r,
+		fetcher,
+		notificationService,
+		payload)
 }
 
 func main() {

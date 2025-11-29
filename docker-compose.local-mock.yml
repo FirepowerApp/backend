@@ -1,0 +1,16 @@
+# Docker Compose Override for Local Mock Data API
+# This override file is used when LOCAL_MOCK=true is set
+# It changes the mock API to use a locally built image instead of pulling from registry
+#
+# Usage:
+#   make test-containers LOCAL_MOCK=true
+#   make test LOCAL_MOCK=true
+#
+# Prerequisites:
+#   Build your local mock API image with the tag: mockdataapi:latest
+#   Example: cd /path/to/mockdataserver && docker build -t mockdataapi:latest .
+
+services:
+  mockdataapi:
+    image: mockdataapi:latest
+    pull_policy: never  # Don't attempt to pull, use local image only

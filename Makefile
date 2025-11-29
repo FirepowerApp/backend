@@ -24,6 +24,10 @@ NC := \033[0m # No Color
 COMPOSE_FILE := docker-compose.yml
 COMPOSE_TEST := docker-compose.test.yml
 COMPOSE_HOME := docker-compose.home.yml
+COMPOSE_LOCAL_MOCK := docker-compose.local-mock.yml
+
+# Local mock API flag (set LOCAL_MOCK=true to use locally built mock API image)
+LOCAL_MOCK ?= false
 
 # Generate unique project name with timestamp for container isolation
 # This allows multiple executions to have separate containers for historical log access
@@ -123,6 +127,8 @@ home: check-docker ## Start home environment with live APIs (.env.home)
 	@printf "$(BLUE)[INFO]$(NC) Starting home environment (live APIs)...\n"
 	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
 	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Ensuring fresh backend build by removing cached image...\n"
+	@docker rmi -f watchgameupdates:latest 2>/dev/null || true
 	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
 	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_HOME) build --progress=plain 2>&1 | tee /tmp/build.log; then \
 		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
@@ -142,21 +148,38 @@ home: check-docker ## Start home environment with live APIs (.env.home)
 	@printf "$(BLUE)[INFO]$(NC) Stop with: make stop\n"
 	@printf "$(BLUE)[INFO]$(NC) List all containers: make list-containers\n"
 
-test-containers: check-docker ## Start test containers and keep running (.env.local with mocks)
+test-containers: check-docker ## Start test containers and keep running (.env.local with mocks, use LOCAL_MOCK=true for local mock image)
 	@printf "$(BLUE)[INFO]$(NC) Starting test containers (mock APIs)...\n"
+	@if [ "$(LOCAL_MOCK)" = "true" ]; then \
+		printf "$(BLUE)[INFO]$(NC) LOCAL_MOCK=true - Using locally built mock API image\n"; \
+		if ! docker images -q mockdataapi:latest >/dev/null 2>&1; then \
+			printf "$(RED)[ERROR]$(NC) Local mock image 'mockdataapi:latest' not found!\n"; \
+			printf "$(RED)[ERROR]$(NC) Build your local mock API with: docker build -t mockdataapi:latest /path/to/mockdataserver\n"; \
+			exit 1; \
+		fi; \
+		printf "$(GREEN)[SUCCESS]$(NC) Found local mockdataapi:latest image\n"; \
+	fi
 	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
 	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Ensuring fresh backend build by removing cached image...\n"
+	@docker rmi -f watchgameupdates:latest 2>/dev/null || true
 	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
-	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) build --progress=plain 2>&1 | tee /tmp/build.log; then \
+	@if [ "$(LOCAL_MOCK)" = "true" ]; then \
+		COMPOSE_CMD="docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_LOCAL_MOCK)"; \
+	else \
+		COMPOSE_CMD="docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST)"; \
+	fi; \
+	if ! $$COMPOSE_CMD build --progress=plain 2>&1 | tee /tmp/build.log; then \
 		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
 		rm -f $(PROJECT_FILE); \
 		exit 1; \
 	fi
 	@printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"
-	@if ! docker images -q mockdataapi:latest >/dev/null 2>&1; then \
-		printf "$(YELLOW)[WARNING]$(NC) mockdataapi:latest image not found.\n"; \
-		printf "$(YELLOW)[WARNING]$(NC) The testserver was removed in commit 606aa80.\n"; \
-		printf "$(YELLOW)[WARNING]$(NC) To use test mode, you need to rebuild the testserver.\n"; \
+	@if [ "$(LOCAL_MOCK)" = "true" ]; then \
+		COMPOSE_CMD="docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_LOCAL_MOCK)"; \
+		$$COMPOSE_CMD --profile test up -d; \
+	elif ! docker images -q blnelson/firepowermockdataserver:latest >/dev/null 2>&1 && ! docker images -q mockdataapi:latest >/dev/null 2>&1; then \
+		printf "$(YELLOW)[WARNING]$(NC) No mock images found.\n"; \
 		printf "$(YELLOW)[WARNING]$(NC) Continuing without mockdataapi (will use live APIs if configured)...\n"; \
 		docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) --profile home up -d; \
 	else \
@@ -166,29 +189,53 @@ test-containers: check-docker ## Start test containers and keep running (.env.lo
 	@printf "\n$(BLUE)[INFO]$(NC) Services available at:\n"
 	@printf "  • Backend: http://localhost:8080\n"
 	@printf "  • Cloud Tasks Emulator: http://localhost:8123\n"
-	@if docker images -q mockdataapi:latest >/dev/null 2>&1; then \
+	@if [ "$(LOCAL_MOCK)" = "true" ] || docker images -q mockdataapi:latest >/dev/null 2>&1 || docker images -q blnelson/firepowermockdataserver:latest >/dev/null 2>&1; then \
 		printf "  • Mock NHL API: http://localhost:8125\n"; \
 		printf "  • Mock MoneyPuck API: http://localhost:8124\n"; \
+		if [ "$(LOCAL_MOCK)" = "true" ]; then \
+			printf "  • Using LOCAL mock image\n"; \
+		fi; \
 	fi
 	@printf "\n$(BLUE)[INFO]$(NC) Container names:\n"
 	@docker compose -p $(PROJECT_NAME) ps --format "table {{.Name}}\t{{.Status}}"
 	@printf "\n$(BLUE)[INFO]$(NC) View logs with: make logs\n"
 	@printf "$(BLUE)[INFO]$(NC) Stop with: make stop\n"
 
-test: check-docker ## Run full automated integration test
+test: check-docker ## Run full automated integration test (use LOCAL_MOCK=true for local mock image)
 	@printf "$(BLUE)🚀 Starting CrashTheCrease Backend Automated Test$(NC)\n"
 	@printf "==================================================\n\n"
+	@if [ "$(LOCAL_MOCK)" = "true" ]; then \
+		printf "$(BLUE)[INFO]$(NC) LOCAL_MOCK=true - Using locally built mock API image\n"; \
+		if ! docker images -q mockdataapi:latest >/dev/null 2>&1; then \
+			printf "$(RED)[ERROR]$(NC) Local mock image 'mockdataapi:latest' not found!\n"; \
+			printf "$(RED)[ERROR]$(NC) Build your local mock API with: docker build -t mockdataapi:latest /path/to/mockdataserver\n"; \
+			exit 1; \
+		fi; \
+		printf "$(GREEN)[SUCCESS]$(NC) Found local mockdataapi:latest image\n"; \
+	fi
 	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
 	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Ensuring fresh backend build by removing cached image...\n"
+	@docker rmi -f watchgameupdates:latest 2>/dev/null || true
 	@printf "$(BLUE)[INFO]$(NC) Building latest code (fail-fast on errors)...\n"
-	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) build --progress=plain 2>&1 | tee /tmp/build.log; then \
+	@if [ "$(LOCAL_MOCK)" = "true" ]; then \
+		COMPOSE_CMD="docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_LOCAL_MOCK)"; \
+	else \
+		COMPOSE_CMD="docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST)"; \
+	fi; \
+	if ! $$COMPOSE_CMD build --progress=plain 2>&1 | tee /tmp/build.log; then \
 		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
 		rm -f $(PROJECT_FILE); \
 		exit 1; \
 	fi
 	@printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"
-	@if ! docker images -q mockdataapi:latest >/dev/null 2>&1; then \
-		printf "$(YELLOW)[WARNING]$(NC) mockdataapi:latest image not found.\n"; \
+	@if [ "$(LOCAL_MOCK)" = "true" ]; then \
+		COMPOSE_CMD="docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_LOCAL_MOCK)"; \
+		printf "$(BLUE)[INFO]$(NC) Starting test containers with local mock...\n"; \
+		$$COMPOSE_CMD --profile test up -d; \
+		printf "$(GREEN)[SUCCESS]$(NC) Test containers started\n"; \
+	elif ! docker images -q blnelson/firepowermockdataserver:latest >/dev/null 2>&1 && ! docker images -q mockdataapi:latest >/dev/null 2>&1; then \
+		printf "$(YELLOW)[WARNING]$(NC) No mock images found.\n"; \
 		printf "$(YELLOW)[WARNING]$(NC) Running tests with live APIs instead of mocks...\n"; \
 		docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) --profile home up -d; \
 	else \
@@ -227,8 +274,11 @@ test: check-docker ## Run full automated integration test
 		printf "$(GREEN)🎉 Automated test completed successfully!$(NC)\n\n"; \
 		printf "📋 What was tested:\n"; \
 		printf "  ✓ Backend container built and started\n"; \
-		if docker images -q mockdataapi:latest >/dev/null 2>&1; then \
+		if [ "$(LOCAL_MOCK)" = "true" ] || docker images -q mockdataapi:latest >/dev/null 2>&1 || docker images -q blnelson/firepowermockdataserver:latest >/dev/null 2>&1; then \
 			printf "  ✓ Mock APIs provided test data\n"; \
+			if [ "$(LOCAL_MOCK)" = "true" ]; then \
+				printf "  ✓ Used locally built mock API image\n"; \
+			fi; \
 		else \
 			printf "  ✓ Backend used live NHL and MoneyPuck APIs\n"; \
 		fi; \
@@ -238,7 +288,11 @@ test: check-docker ## Run full automated integration test
 		printf "🔍 Test containers stopped but preserved for inspection:\n"; \
 		printf "  • View logs: make logs-history PROJECT=$(PROJECT_NAME)\n"; \
 		printf "  • Clean up with: make clean\n\n"; \
-		docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) stop backend mockdataapi 2>/dev/null || docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) stop backend 2>/dev/null || true; \
+		if [ "$(LOCAL_MOCK)" = "true" ]; then \
+			docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_LOCAL_MOCK) stop backend mockdataapi 2>/dev/null || docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) stop backend 2>/dev/null || true; \
+		else \
+			docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) stop backend mockdataapi 2>/dev/null || docker compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) stop backend 2>/dev/null || true; \
+		fi; \
 	else \
 		printf "$(RED)[ERROR]$(NC) Test timed out or failed after $${elapsed}s\n"; \
 		printf "$(BLUE)[INFO]$(NC) Check logs with: make logs\n"; \
@@ -329,7 +383,7 @@ clean: ## Stop and remove current containers
 	@if [ -f $(PROJECT_FILE) ]; then \
 		PROJECT=$$(cat $(PROJECT_FILE)); \
 		printf "$(BLUE)[INFO]$(NC) Cleaning up project: $$PROJECT\n"; \
-		docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_HOME) down -v 2>/dev/null || true; \
+		docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) -f $(COMPOSE_HOME) -f $(COMPOSE_LOCAL_MOCK) down -v 2>/dev/null || true; \
 		rm -f $(PROJECT_FILE); \
 		printf "$(GREEN)[SUCCESS]$(NC) Current project cleaned up\n"; \
 	else \

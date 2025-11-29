@@ -7,10 +7,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"watchgameupdates/config"
 	"watchgameupdates/internal/models"
+	"watchgameupdates/internal/notification"
 	"watchgameupdates/internal/services"
 	"watchgameupdates/internal/tasks"
 
@@ -18,7 +20,12 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher services.GameDataFetcher, recomputeTypes map[string]struct{}, notifier Notifier) {
+func WatchGameUpdatesHandler(
+	w http.ResponseWriter,
+	r *http.Request,
+	fetcher services.GameDataFetcher,
+	notificationService *notification.Service,
+	payload models.Payload) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -27,82 +34,47 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 
 	log.Printf("Raw body: %s", body)
 
-	var payload models.Payload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+	executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
+	if err != nil {
+		http.Error(w, "Invalid scheduled_time format", http.StatusBadRequest)
+		return
+	}
+	if time.Now().After(executionEnd) {
+		log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
 		return
 	}
 
-	if payload.ExecutionEnd != nil {
-		executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
-		if err != nil {
-			http.Error(w, "Invalid scheduled_time format", http.StatusBadRequest)
-			return
-		}
-
-		if time.Now().After(executionEnd) {
-			log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
-			return
-		}
-	} else {
-		log.Println("Max execution time not set, proceeding without time check.")
+	recomputeTypes := map[string]struct{}{
+		"blocked-shot": {},
+		"missed-shot":  {},
+		"shot-on-goal": {},
+		"goal":         {},
+		"game-end":     {},
 	}
-
 	lastPlay := services.FetchPlayByPlay(payload.Game.ID)
-	homeTeamExpectedGoals := ""
-	awayTeamExpectedGoals := ""
 
 	if _, ok := recomputeTypes[lastPlay.TypeDescKey]; ok {
 		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlay.TypeDescKey, payload.Game.ID)
 
-		records, err := fetcher.FetchGameData(payload.Game.ID)
-		if err != nil {
-			log.Printf("ERROR: Failed to fetch MoneyPuck data for game %s: %v", payload.Game.ID, err)
-			homeTeamExpectedGoals = "-1"
-			awayTeamExpectedGoals = "-1"
-		} else {
-			// Log CSV structure for debugging
-			if len(records) > 0 {
-				log.Printf("MoneyPuck CSV structure - Columns: %d, Rows: %d", len(records[0]), len(records))
-				log.Printf("Available columns: %v", records[0])
-				if len(records) > 1 {
-					log.Printf("Sample data row: %v", records[len(records)-1])
+		requiredKeys := notificationService.GetAllRequiredDataKeys()
+
+		gameData, err := fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
+		if lastPlay.TypeDescKey == "game-end" {
+			homeGoals, homeGOK := gameData["homeTeamGoals"]
+			awayGoals, awayGOK := gameData["awayTeamGoals"]
+
+			if homeGOK && awayGOK && homeGoals == awayGoals {
+				if err := adjustScoreForShootout(gameData); err != nil {
+					log.Printf("Failed to adjust score for shootout: %v", err)
 				}
-			} else {
-				log.Printf("WARNING: No data rows returned from MoneyPuck for game %s", payload.Game.ID)
-			}
-
-			homeTeamExpectedGoals, err = fetcher.GetColumnValue("homeTeamExpectedGoals", records)
-			if err != nil {
-				log.Printf("WARNING: Could not extract homeTeamExpectedGoals: %v", err)
-			}
-
-			awayTeamExpectedGoals, err = fetcher.GetColumnValue("awayTeamExpectedGoals", records)
-			if err != nil {
-				log.Printf("WARNING: Could not extract awayTeamExpectedGoals: %v", err)
 			}
 		}
 
-		if homeTeamExpectedGoals != "" || awayTeamExpectedGoals != "" {
-			log.Printf("Got new values for GameID: %s, Home Team Expected Goals: %s, Away Team Expected Goals: %s", payload.Game.ID, homeTeamExpectedGoals, awayTeamExpectedGoals)
-
-			// Get team names from the payload instead of trying to extract from MoneyPuck data
-			homeTeam := payload.Game.HomeTeam.CommonName["default"]
-			awayTeam := payload.Game.AwayTeam.CommonName["default"]
-			if homeTeam == "" {
-				homeTeam = "Home Team"
-			}
-			if awayTeam == "" {
-				awayTeam = "Away Team"
-			}
-
-			// Extract current scores from MoneyPuck data
-			homeTeamGoals, _ := fetcher.GetColumnValue("homeTeamGoals", records)
-			awayTeamGoals, _ := fetcher.GetColumnValue("awayTeamGoals", records)
-
-			// Send notification using the provided notifier
-			sendExpectedGoalsNotification(notifier, homeTeam, awayTeam, homeTeamExpectedGoals, awayTeamExpectedGoals, homeTeamGoals, awayTeamGoals)
+		if err != nil {
+			log.Printf("ERROR: Failed to fetch and parse MoneyPuck data for game %s: %v", payload.Game.ID, err)
 		}
+
+		notificationService.SendGameEventNotifications(payload.Game, gameData)
 	}
 
 	shouldReschedule := services.ShouldReschedule(payload, lastPlay)
@@ -115,6 +87,58 @@ func WatchGameUpdatesHandler(w http.ResponseWriter, r *http.Request, fetcher ser
 			return
 		}
 	}
+}
+
+func adjustScoreForShootout(gameData map[string]string) error {
+	homeScore, err := strconv.Atoi(gameData["homeTeamGoals"])
+	if err != nil {
+		return fmt.Errorf("invalid home goals: %w", err)
+	}
+
+	awayScore, err := strconv.Atoi(gameData["awayTeamGoals"])
+	if err != nil {
+		return fmt.Errorf("invalid away goals: %w", err)
+	}
+
+	homeSOGoals, err := strconv.Atoi(gameData["homeTeamShootOutGoals"])
+	if err != nil {
+		return fmt.Errorf("invalid home shootout goals: %w", err)
+	}
+
+	awaySOGoals, err := strconv.Atoi(gameData["awayTeamShootOutGoals"])
+	if err != nil {
+		return fmt.Errorf("invalid away shootout goals: %w", err)
+	}
+
+	if homeSOGoals > awaySOGoals {
+		homeScore++
+	} else if awaySOGoals > homeSOGoals {
+		awayScore++
+	}
+
+	gameData["homeTeamGoals"] = strconv.Itoa(homeScore)
+	gameData["awayTeamGoals"] = strconv.Itoa(awayScore)
+
+	return nil
+}
+
+func shouldSkipExecution(payload models.Payload) (bool, error) {
+	if payload.ExecutionEnd != nil {
+		executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
+		if err != nil {
+			log.Printf("Invalid scheduled_time format: %v", err)
+			return true, err
+		}
+
+		if time.Now().After(executionEnd) {
+			log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
+			return true, nil
+		}
+	} else {
+		log.Println("Max execution time not set, proceeding without time check.")
+	}
+
+	return false, nil
 }
 
 // scheduleNextCheck creates a Cloud Task to reschedule the next game check
@@ -130,7 +154,8 @@ func scheduleNextCheck(payload models.Payload) error {
 	}
 	defer tasksClient.Close()
 
-	scheduleTime := timestamppb.New(time.Now().Add(60 * time.Second))
+	messageInterval := time.Duration(cfg.MessageIntervalSeconds) * time.Second
+	scheduleTime := timestamppb.New(time.Now().Add(messageInterval))
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"watchgameupdates/config"
@@ -48,6 +49,7 @@ func WatchGameUpdatesHandler(
 		"missed-shot":  {},
 		"shot-on-goal": {},
 		"goal":         {},
+		"game-end":     {},
 	}
 	lastPlay := services.FetchPlayByPlay(payload.Game.ID)
 
@@ -57,6 +59,17 @@ func WatchGameUpdatesHandler(
 		requiredKeys := notificationService.GetAllRequiredDataKeys()
 
 		gameData, err := fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
+		if lastPlay.TypeDescKey == "game-end" {
+			homeGoals, homeGOK := gameData["homeTeamGoals"]
+			awayGoals, awayGOK := gameData["awayTeamGoals"]
+
+			if homeGOK && awayGOK && homeGoals == awayGoals {
+				if err := adjustScoreForShootout(gameData); err != nil {
+					log.Printf("Failed to adjust score for shootout: %v", err)
+				}
+			}
+		}
+
 		if err != nil {
 			log.Printf("ERROR: Failed to fetch and parse MoneyPuck data for game %s: %v", payload.Game.ID, err)
 		}
@@ -74,6 +87,39 @@ func WatchGameUpdatesHandler(
 			return
 		}
 	}
+}
+
+func adjustScoreForShootout(gameData map[string]string) error {
+	homeScore, err := strconv.Atoi(gameData["homeTeamGoals"])
+	if err != nil {
+		return fmt.Errorf("invalid home goals: %w", err)
+	}
+
+	awayScore, err := strconv.Atoi(gameData["awayTeamGoals"])
+	if err != nil {
+		return fmt.Errorf("invalid away goals: %w", err)
+	}
+
+	homeSOGoals, err := strconv.Atoi(gameData["homeTeamShootOutGoals"])
+	if err != nil {
+		return fmt.Errorf("invalid home shootout goals: %w", err)
+	}
+
+	awaySOGoals, err := strconv.Atoi(gameData["awayTeamShootOutGoals"])
+	if err != nil {
+		return fmt.Errorf("invalid away shootout goals: %w", err)
+	}
+
+	if homeSOGoals > awaySOGoals {
+		homeScore++
+	} else if awaySOGoals > homeSOGoals {
+		awayScore++
+	}
+
+	gameData["homeTeamGoals"] = strconv.Itoa(homeScore)
+	gameData["awayTeamGoals"] = strconv.Itoa(awayScore)
+
+	return nil
 }
 
 func shouldSkipExecution(payload models.Payload) (bool, error) {

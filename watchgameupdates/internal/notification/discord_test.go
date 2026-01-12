@@ -149,9 +149,6 @@ func assertMessageContent(t *testing.T, message string, tc formatMessageTestCase
 		if !strings.Contains(message, tc.expectedScore) {
 			t.Errorf("Expected message to contain '%s', got: %s", tc.expectedScore, message)
 		}
-		if !strings.Contains(message, "🏒 Current Score:") {
-			t.Errorf("Expected message to contain score header, got: %s", message)
-		}
 	}
 
 	// Assert expected goals are present and correct

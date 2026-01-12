@@ -115,7 +115,7 @@ func (d *DiscordNotifier) FormatMessage(req NotificationRequest) string {
 	awayXG, hasAwayXG := req.Data["awayTeamExpectedGoals"]
 
 	if hasHomeGoals && hasAwayGoals {
-		message += "🏒 Current Score: " + req.Team1ID + " " + homeGoals + " - " + awayGoals + " " + req.Team2ID + "\n\n"
+		message += req.Team1ID + " " + homeGoals + " - " + awayGoals + " " + req.Team2ID + "\n"
 	}
 
 	// Show expected goals if available

@@ -45,6 +45,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Remove timestamp prefix from logs - Docker/structured logging handles timestamps
+	log.SetFlags(0)
+
 	funcframework.RegisterHTTPFunction("/", handler)
 	if err := funcframework.Start("8080"); err != nil {
 		log.Fatalf("Failed to start function: %v", err)

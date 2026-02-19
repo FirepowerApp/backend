@@ -10,8 +10,10 @@
 #   make clean          - Stop and remove current containers
 #   make build          - Build all Go binaries
 #   make pull           - Pull all required Docker images (with retry)
+#   make redis-up       - Start Redis worker environment (Asynq + Asynqmon)
+#   make redis-stop     - Stop Redis worker environment
 
-.PHONY: help setup home test test-containers clean logs build pull check-deps check-docker check-go pull-with-retry status stop restart clean-all list-containers
+.PHONY: help setup home test test-containers clean logs build pull check-deps check-docker check-go pull-with-retry status stop restart clean-all list-containers redis-up redis-stop redis-logs redis-status build-enqueue
 
 # Color output
 BLUE := \033[0;34m
@@ -25,6 +27,7 @@ COMPOSE_FILE := docker-compose.yml
 COMPOSE_TEST := docker-compose.test.yml
 COMPOSE_HOME := docker-compose.home.yml
 COMPOSE_LOCAL_MOCK := docker-compose.local-mock.yml
+COMPOSE_REDIS := docker-compose.redis.yml
 
 # Local mock API flag (set LOCAL_MOCK=true to use locally built mock API image)
 LOCAL_MOCK ?= false
@@ -430,6 +433,93 @@ build-backend: check-go ## Build backend binary only
 	@go run build.go -target watchgameupdates
 	@printf "$(GREEN)[SUCCESS]$(NC) Backend binary built: ./bin/watchgameupdates\n"
 
+build-enqueue: check-go ## Build the Redis queue enqueue CLI tool
+	@printf "$(BLUE)[INFO]$(NC) Building enqueue CLI tool...\n"
+	@go run build.go -target enqueue
+	@printf "$(GREEN)[SUCCESS]$(NC) Enqueue CLI built: ./bin/enqueue\n"
+
+##@ Redis Queue (Worker Mode)
+
+redis-up: check-docker ## Start Redis worker environment (Redis + Asynqmon + backend in worker mode)
+	@printf "$(BLUE)[INFO]$(NC) Starting Redis worker environment...\n"
+	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
+	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@printf "$(BLUE)[INFO]$(NC) Building backend in worker mode...\n"
+	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_REDIS) build --progress=plain 2>&1 | tee /tmp/build.log; then \
+		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
+		rm -f $(PROJECT_FILE); \
+		exit 1; \
+	fi
+	@printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"
+	@printf "$(BLUE)[INFO]$(NC) Starting containers...\n"
+	@docker compose -p $(PROJECT_NAME) -f $(COMPOSE_REDIS) --profile home up -d
+	@printf "$(GREEN)[SUCCESS]$(NC) Redis worker environment started\n"
+	@printf "\n$(BLUE)[INFO]$(NC) Services available at:\n"
+	@printf "  • Asynqmon Dashboard: http://localhost:8980\n"
+	@printf "  • Redis: localhost:6379\n"
+	@printf "\n$(BLUE)[INFO]$(NC) Enqueue a task with:\n"
+	@printf "  ./bin/enqueue --game=2024030411\n"
+	@printf "\n$(BLUE)[INFO]$(NC) Container names:\n"
+	@docker compose -p $(PROJECT_NAME) -f $(COMPOSE_REDIS) ps --format "table {{.Name}}\t{{.Status}}"
+	@printf "\n$(BLUE)[INFO]$(NC) View logs with: make redis-logs\n"
+	@printf "$(BLUE)[INFO]$(NC) Stop with: make redis-stop\n"
+
+redis-test: check-docker ## Start Redis worker environment with mock APIs for testing
+	@printf "$(BLUE)[INFO]$(NC) Starting Redis test environment (mock APIs + worker mode)...\n"
+	@printf "$(BLUE)[INFO]$(NC) Project: $(PROJECT_NAME)\n"
+	@echo "$(PROJECT_NAME)" > $(PROJECT_FILE)
+	@if ! docker compose -p $(PROJECT_NAME) -f $(COMPOSE_REDIS) build --progress=plain 2>&1 | tee /tmp/build.log; then \
+		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
+		rm -f $(PROJECT_FILE); \
+		exit 1; \
+	fi
+	@printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"
+	@docker compose -p $(PROJECT_NAME) -f $(COMPOSE_REDIS) --profile test up -d
+	@printf "$(GREEN)[SUCCESS]$(NC) Redis test environment started\n"
+	@printf "\n$(BLUE)[INFO]$(NC) Services available at:\n"
+	@printf "  • Asynqmon Dashboard: http://localhost:8980\n"
+	@printf "  • Redis: localhost:6379\n"
+	@printf "  • Mock NHL API: http://localhost:8125\n"
+	@printf "  • Mock MoneyPuck API: http://localhost:8124\n"
+
+redis-stop: ## Stop Redis worker environment
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Stopping Redis containers for project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT -f $(COMPOSE_REDIS) stop; \
+		printf "$(GREEN)[SUCCESS]$(NC) Redis containers stopped\n"; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project to stop\n"; \
+	fi
+
+redis-clean: ## Stop and remove Redis worker containers and volumes
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Cleaning up Redis project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT -f $(COMPOSE_REDIS) down -v 2>/dev/null || true; \
+		rm -f $(PROJECT_FILE); \
+		printf "$(GREEN)[SUCCESS]$(NC) Redis project cleaned up\n"; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project to clean\n"; \
+	fi
+
+redis-logs: ## View logs from Redis worker environment
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Showing logs for Redis project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT -f $(COMPOSE_REDIS) logs -f; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project. Start with 'make redis-up'\n"; \
+	fi
+
+redis-status: ## Show status of Redis worker containers
+	@if [ -f $(PROJECT_FILE) ]; then \
+		PROJECT=$$(cat $(PROJECT_FILE)); \
+		printf "$(BLUE)[INFO]$(NC) Redis project: $$PROJECT\n"; \
+		docker compose -p $$PROJECT -f $(COMPOSE_REDIS) ps; \
+	else \
+		printf "$(YELLOW)[WARNING]$(NC) No current project. Start with 'make redis-up'\n"; \
+	fi
 
 ##@ Utilities
 

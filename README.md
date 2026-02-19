@@ -1,6 +1,6 @@
 # Firepower Backend
 
-A Go-based backend service for tracking and managing NHL game updates using Google Cloud Tasks.
+A Go-based backend service for tracking and managing NHL game updates. Supports two task queue backends: **Google Cloud Tasks** (HTTP mode) and **Redis via Asynq** (worker mode), selectable at runtime with a `--mode` flag.
 
 ## Prerequisites
 
@@ -30,27 +30,57 @@ Your services will be available at:
 - Mock NHL API (emulator mode only): http://localhost:8125
 - Mock MoneyPuck API (emulator mode only): http://localhost:8124
 
+### Quick Start (Redis Worker Mode)
+
+```bash
+# Start Redis + Asynqmon + backend worker
+make redis-up
+
+# Build the enqueue CLI
+make build-enqueue
+
+# Enqueue a game-watching task
+./bin/enqueue --game=2024030411
+
+# View task queue dashboard
+open http://localhost:8980
+
+# View logs
+make redis-logs
+
+# Stop
+make redis-stop
+```
+
+Your services will be available at:
+- Asynqmon Dashboard: http://localhost:8980
+- Redis: localhost:6379
+
 ## Project Structure
 
 ```
 backend/
-├── watchgameupdates/        # Main service
-│   ├── cmd/                 # Application entry point
-│   ├── internal/            # Internal packages
-│   │   ├── handlers/        # HTTP handlers
-│   │   ├── services/        # Business logic
-│   │   ├── tasks/           # Cloud Tasks integration
-│   │   ├── models/          # Data models
-│   │   └── notification/    # Discord and LiveActivity (APNs) notifiers
-│   │       └── liveactivity/ # iOS Live Activity APNs broadcast push
-│   ├── config/              # Configuration management
-│   └── Dockerfile           # Container definition
-├── localCloudTasksTest/     # Test client for Cloud Tasks
-├── docker-compose.yml       # Base compose definition
-├── docker-compose.live.yml  # Overlay for live APIs
-├── docker-compose.emulator.yml # Overlay for mock APIs
-├── Makefile                 # Development commands
-└── README.md                # This file
+├── watchgameupdates/            # Main service
+│   ├── cmd/
+│   │   ├── watchgameupdates/    # App entry point (-mode=http or -mode=worker)
+│   │   └── enqueue/             # CLI tool to enqueue tasks into Redis
+│   ├── internal/
+│   │   ├── handlers/            # HTTP handlers (Cloud Tasks mode)
+│   │   ├── services/            # Shared business logic & game processor
+│   │   ├── tasks/               # Cloud Tasks client + Asynq task types/handler
+│   │   ├── notification/        # Discord and LiveActivity (APNs) notifiers
+│   │   │   └── liveactivity/    # iOS Live Activity APNs broadcast push
+│   │   └── models/              # Data models
+│   ├── config/                  # Configuration management
+│   ├── Dockerfile               # Container definition (HTTP mode)
+│   └── Dockerfile.worker        # Container definition (worker mode)
+├── localCloudTasksTest/         # Test client for Cloud Tasks
+├── docs/                        # Documentation
+│   └── queue-visualization.md   # Asynqmon dashboard guide
+├── docker-compose.yml           # Cloud Tasks orchestration
+├── docker-compose.redis.yml     # Redis queue orchestration
+├── Makefile                     # Development commands
+└── README.md                    # This file
 ```
 
 ## Development
@@ -68,11 +98,18 @@ make schedule          # Start full system and run scheduler with live NHL data
 make schedule-test     # Start full system and run scheduler with mock data
 make schedule-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run scheduler for one team
 make watch TEAM=COL    # Live e2e test: schedule today's real game and tail logs
+
+# Redis Queue (Worker Mode)
+make redis-up          # Start Redis + Asynqmon + worker backend
+make redis-test        # Start Redis test environment (with mock APIs)
+make redis-stop        # Stop Redis containers
+make redis-logs        # View Redis worker logs
+make build-enqueue     # Build the Redis enqueue CLI tool
 ```
 
 ### Environment Modes
 
-The system supports two environment modes:
+The system supports two task queue backends and multiple environment modes:
 
 #### Live Mode
 Uses real NHL and MoneyPuck APIs for development and testing with live data.
@@ -121,6 +158,33 @@ This is equivalent to `make schedule-test` but uses your locally built emulator 
 
 The reason only the emulator needs a separate build step is that the backend is always built from local source by Compose (via the `build:` directive in `docker-compose.yml`), so it automatically reflects any local changes. The emulator, by contrast, is referenced as a pre-built image (`image: blnelson/firepowermockdataserver:latest`), so Compose just uses whatever is cached locally under that tag. The difference between this approach and `make schedule-test` is that the Makefile target runs `podman pull docker.io/blnelson/firepowermockdataserver:latest` before starting the stack, which would overwrite your locally built image with the latest version from the registry. By invoking `podman-compose` directly and skipping that pull, Podman uses the local image you built from your branch instead.
 
+#### Redis Worker Mode
+
+Uses Redis as the task queue instead of Cloud Tasks. The backend runs as a long-lived worker process that polls Redis for scheduled tasks. Includes the Asynqmon web dashboard for queue visualization.
+
+```bash
+# Start Redis worker environment
+make redis-up
+
+# Build the enqueue CLI and add a task
+make build-enqueue
+./bin/enqueue --game=2024030411 --duration=12m --notify=true
+
+# Open the Asynqmon dashboard to observe the task
+open http://localhost:8980
+
+# Start with mock APIs for testing
+make redis-test
+```
+
+Configuration: `watchgameupdates/.env.redis` (create from `.env.redis.example`)
+
+The `--mode` flag on the binary controls which backend is used:
+- `./bin/watchgameupdates -mode=http` — Cloud Tasks HTTP handler (default)
+- `./bin/watchgameupdates -mode=worker` — Redis/Asynq worker
+
+See [docs/queue-visualization.md](docs/queue-visualization.md) for details on using the Asynqmon dashboard.
+
 ### Configuration
 
 Environment files are located in `watchgameupdates/`:
@@ -147,7 +211,19 @@ MESSAGE_INTERVAL_SECONDS=60          # How often to poll during active play (def
 PERIOD_END_INTERVAL_SECONDS=1200     # How long to wait after a period ends (default: 1200 = 20min)
 ```
 
-**`.env.example`** - Template for custom configurations (includes APNs vars for Live Activity)
+**`.env.redis`** - Redis worker mode environment
+```env
+APP_ENV=local
+REDIS_ADDRESS=redis:6379
+REDIS_PASSWORD=
+REDIS_DB=0
+MESSAGE_INTERVAL_SECONDS=60
+PLAYBYPLAY_API_BASE_URL=
+STATS_API_BASE_URL=
+DISCORD_BOT_TOKEN=your_bot_token_here
+```
+
+**`.env.example`** - Template for custom configurations (includes both Cloud Tasks and Redis vars, and APNs vars for Live Activity)
 
 Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. To enable iOS Live Activity push, set `LIVEACTIVITY_PUSH_ENABLED=true` and populate the `APNS_*` vars — see `.env.example` for the full list.
 
@@ -236,40 +312,53 @@ cd watchgameupdates && go tool cover -html=coverage.out
 
 ## Architecture
 
-### Services
+### Run Modes
 
-The project uses Compose to orchestrate three main services:
+The backend binary supports two modes via `--mode`:
 
-**Cloud Tasks Emulator**
-- Emulates Google Cloud Tasks for local development
-- Persists across test runs
-- Port: 8123
+| | HTTP Mode (`-mode=http`) | Worker Mode (`-mode=worker`) |
+|---|---|---|
+| **Task broker** | Google Cloud Tasks (or emulator) | Redis (via Asynq) |
+| **Trigger model** | Push — Cloud Tasks POSTs to backend | Pull — worker polls Redis |
+| **Compose file** | `docker-compose.yml` | `docker-compose.redis.yml` |
+| **Monitoring** | Cloud Tasks emulator (port 8123) | Asynqmon dashboard (port 8980) |
+| **Enqueue tool** | `localCloudTasksTest/` | `cmd/enqueue/` |
 
-**Backend (watchgameupdates)**
-- Main application service
-- Processes game updates and manages task queues
-- Port: 8080
+Both modes share the same core game processing logic in `internal/services/gameprocessor.go`.
 
-**Mock Data API** (optional, test mode only)
-- Provides mock NHL and MoneyPuck API responses
-- Ports: 8124 (MoneyPuck), 8125 (NHL)
+### Services (HTTP Mode)
+
+Uses `docker-compose.yml`:
+
+- **Cloud Tasks Emulator** — Port 8123
+- **Backend** (HTTP server) — Port 8080
+- **Mock Data API** (test only) — Ports 8124, 8125
+
+### Services (Worker Mode)
+
+Uses `docker-compose.redis.yml`:
+
+- **Redis** — Port 6379
+- **Asynqmon** (web dashboard) — Port 8980
+- **Backend** (Asynq worker) — no exposed port
+- **Mock Data API** (test profile) — Ports 8124, 8125
 
 ### Key Components
 
-- **WatchGameUpdatesHandler** - Main HTTP handler for game update requests
-- **HTTPGameDataFetcher** - Fetches game data from NHL APIs
-- **PlayByPlay Service** - Processes play-by-play events
-- **Task Factory** - Creates and manages Cloud Tasks
-- **Rescheduler** - Handles task rescheduling based on game state
-- **Fetcher Service** - Retrieves expected goals data from MoneyPuck
+- **GameProcessor** - Shared game-check logic (fetch play-by-play, fetch stats, send notifications)
+- **WatchGameUpdatesHandler** (HTTP) - HTTP handler for Cloud Tasks mode
+- **WatchGameUpdatesHandler** (Asynq) - Task handler for Redis worker mode
+- **HTTPGameDataFetcher** - Fetches game data from NHL/MoneyPuck APIs
+- **Rescheduler** - Determines if a game check should be rescheduled
 
 ### Data Flow
 
 ```
-Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Reschedule/Complete
-                    ↓
-              Discord Notifications
-              LiveActivity APNs Push (iOS)
+HTTP Mode:  Cloud Tasks → HTTP Handler → GameProcessor → Reschedule via Cloud Tasks
+Worker Mode:     Redis  → Asynq Handler → GameProcessor → Reschedule via Redis enqueue
+                                  ↓
+                          Discord Notifications
+                          LiveActivity APNs Push (iOS)
 ```
 
 ## Advanced Usage
@@ -299,7 +388,12 @@ Build Go binaries without Podman:
 
 ```bash
 go run build.go -target watchgameupdates
+go run build.go -target enqueue
 go run build.go -target localCloudTasksTest
+
+# Run in specific mode
+./bin/watchgameupdates -mode=http    # Cloud Tasks HTTP server
+./bin/watchgameupdates -mode=worker  # Redis/Asynq worker
 
 # Binaries are output to ./bin/
 ```
@@ -397,7 +491,7 @@ GET https://moneypuck.com/moneypuck/gameData/{season}/{game_id}.csv
 
 ## Deployment
 
-### Containerized Deployment
+### Cloud Tasks (HTTP Mode)
 
 ```bash
 cd watchgameupdates
@@ -405,18 +499,22 @@ podman build -t crashthecrease-backend .
 podman run -p 8080:8080 crashthecrease-backend
 ```
 
-### Google Cloud Platform
+Deploys on Google Cloud Run / Cloud Functions with Google Cloud Tasks.
 
-The service is designed to deploy on:
-- **Google Cloud Run** - Containerized serverless deployment
-- **Google Cloud Functions** - Function-as-a-Service deployment
-- **Google Cloud Tasks** - Managed task queue service
+### Redis Worker Mode
 
-Update environment variables for production:
-- Remove `CLOUD_TASKS_EMULATOR_HOST` (use real Cloud Tasks)
-- Set proper `GCP_PROJECT_ID` and `GCP_LOCATION`
-- Configure production API endpoints
-- Set production Discord webhook URLs
+```bash
+cd watchgameupdates
+docker build -f Dockerfile.worker -t crashthecrease-worker .
+docker run --env-file .env.redis crashthecrease-worker
+```
+
+Requires a Redis instance. Works with any Redis provider:
+- **Local** — Docker Redis
+- **AWS** — ElastiCache
+- **Managed** — Redis Cloud, Upstash, etc.
+
+Set `REDIS_ADDRESS`, `REDIS_PASSWORD`, and `REDIS_DB` in your environment.
 
 ## Development Workflow
 

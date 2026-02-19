@@ -23,7 +23,13 @@ var buildTargets = map[string]BuildTarget{
 		Name:        "watchgameupdates",
 		SourcePath:  "./watchgameupdates/cmd/watchgameupdates",
 		BinaryName:  "watchgameupdates",
-		Description: "Main game updates watcher service",
+		Description: "Main game updates watcher service (use -mode=http or -mode=worker)",
+	},
+	"enqueue": {
+		Name:        "enqueue",
+		SourcePath:  "./watchgameupdates/cmd/enqueue",
+		BinaryName:  "enqueue",
+		Description: "CLI tool to enqueue game-watching tasks into Redis",
 	},
 	"localCloudTasksTest": {
 		Name:        "localCloudTasksTest",

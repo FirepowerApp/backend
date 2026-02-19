@@ -1,0 +1,98 @@
+# Docker Compose for Redis Queue Mode
+# Starts Redis, Asynqmon (web dashboard), and the backend in worker mode.
+#
+# Usage:
+#   docker compose -f docker-compose.redis.yml up
+#   docker compose -f docker-compose.redis.yml --profile test up  # include mock APIs
+#
+# Dashboard: http://localhost:8980
+
+x-common-settings: &common-settings
+  networks:
+    - net
+  restart: unless-stopped
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 5s
+  timeout: 3s
+  retries: 30
+  start_period: 10s
+
+services:
+  redis:
+    <<: *common-settings
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "redis-cli", "ping"]
+    profiles:
+      - home
+      - test
+      - default
+
+  asynqmon:
+    <<: *common-settings
+    image: hibiken/asynqmon:latest
+    ports:
+      - "8980:8080"
+    environment:
+      - REDIS_ADDR=redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - home
+      - test
+      - default
+
+  backend:
+    <<: *common-settings
+    build:
+      context: ./watchgameupdates
+      dockerfile: Dockerfile.worker
+    image: watchgameupdates-worker:latest
+    environment:
+      - REDIS_ADDRESS=redis:6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+      - MESSAGE_INTERVAL_SECONDS=60
+    env_file:
+      - ./watchgameupdates/.env.redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck-defaults
+      # Worker process doesn't expose HTTP; check that the process is running
+      test: ["CMD-SHELL", "pgrep main || exit 1"]
+    profiles:
+      - home
+      - test
+      - default
+
+  # Mock Data API (test profile only)
+  mockdataapi:
+    <<: *common-settings
+    image: blnelson/firepowermockdataserver:latest
+    ports:
+      - "8124:8124"
+      - "8125:8125"
+    environment:
+      - PLAYBYPLAY_PORT=8125
+      - STATS_PORT=8124
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8125/v1/gamecenter/test/play-by-play || exit 1"]
+    profiles:
+      - test
+
+volumes:
+  redis-data:
+
+networks:
+  net:
+    driver: bridge

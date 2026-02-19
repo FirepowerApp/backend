@@ -1,21 +1,28 @@
 # CrashTheCrease Backend Makefile
 #
 # Targets:
-#   make live      - Start handler and tasks queue with live game data APIs (.env.home)
-#   make emulator  - Pull game data emulator from registry and start all components (.env.local)
-#   make stop      - Stop all running containers
-#   make logs      - Follow logs from running containers
-#   make schedule  - Start full system and run scheduler with live NHL data
+#   make live          - Start handler and tasks queue with live game data APIs (.env.home)
+#   make emulator      - Pull game data emulator from registry and start all components (.env.local)
+#   make stop          - Stop all running containers
+#   make logs          - Follow logs from running containers
+#   make schedule      - Start full system and run scheduler with live NHL data
 #   make schedule-test - Start full system and run scheduler with test data
 #   make schedule-team TEAM=TRI [DATE=YYYY-MM-DD] - Run scheduler for a single team (DATE overrides UTC default)
+#   make redis-up      - Start Redis worker environment (Redis + Asynqmon + backend in worker mode)
+#   make redis-test    - Start Redis worker environment with mock APIs for testing
+#   make redis-stop    - Stop Redis worker environment
+#   make redis-logs    - Follow logs from the Redis worker environment
+#   make build-enqueue - Build the Redis queue enqueue CLI tool
 
 TEAM ?= COL
 
-.PHONY: help live emulator stop logs schedule schedule-test watch schedule-team
+.PHONY: help live emulator stop logs schedule schedule-test watch schedule-team redis-up redis-test redis-stop redis-logs build-enqueue
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
 NC    := \033[0m
+
+COMPOSE_REDIS := docker-compose.redis.yml
 
 .DEFAULT_GOAL := help
 
@@ -41,6 +48,7 @@ emulator: ## Pull game data emulator from registry and start all components (.en
 
 stop: ## Stop all running containers
 	@podman-compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml -f docker-compose.watch.yml down 2>/dev/null || true
+	@podman-compose -f $(COMPOSE_REDIS) down 2>/dev/null || true
 	@printf "$(GREEN)[OK]$(NC) Containers stopped\n"
 
 logs: ## Follow logs from running containers
@@ -91,3 +99,35 @@ schedule-test: ## Start full system and run scheduler with test data
 	@printf "  Tasks emulator:     http://localhost:8123\n"
 	@printf "  Game data emulator: http://localhost:8125 (NHL), http://localhost:8124 (MoneyPuck)\n"
 	@printf "View logs: make logs  |  Stop: make stop\n"
+
+##@ Redis Queue (Worker Mode)
+
+redis-up: ## Start Redis worker environment (Redis + Asynqmon + backend in worker mode)
+	@printf "$(BLUE)[INFO]$(NC) Starting Redis worker environment...\n"
+	@podman-compose -f $(COMPOSE_REDIS) --profile home up --build -d
+	@printf "$(GREEN)[OK]$(NC) Redis worker environment started\n"
+	@printf "  Asynqmon dashboard: http://localhost:8980\n"
+	@printf "  Redis:              localhost:6379\n"
+	@printf "Enqueue a task with: ./bin/enqueue --game=2024030411\n"
+	@printf "View logs: make redis-logs  |  Stop: make redis-stop\n"
+
+redis-test: ## Start Redis worker environment with mock APIs for testing
+	@printf "$(BLUE)[INFO]$(NC) Starting Redis test environment (mock APIs + worker mode)...\n"
+	@podman-compose -f $(COMPOSE_REDIS) --profile test up --build -d
+	@printf "$(GREEN)[OK]$(NC) Redis test environment started\n"
+	@printf "  Asynqmon dashboard:  http://localhost:8980\n"
+	@printf "  Redis:               localhost:6379\n"
+	@printf "  Mock NHL API:        http://localhost:8125\n"
+	@printf "  Mock MoneyPuck API:  http://localhost:8124\n"
+
+redis-stop: ## Stop Redis worker environment
+	@podman-compose -f $(COMPOSE_REDIS) down 2>/dev/null || true
+	@printf "$(GREEN)[OK]$(NC) Redis containers stopped\n"
+
+redis-logs: ## Follow logs from the Redis worker environment
+	@podman-compose -f $(COMPOSE_REDIS) logs -f
+
+build-enqueue: ## Build the Redis queue enqueue CLI tool
+	@printf "$(BLUE)[INFO]$(NC) Building enqueue CLI tool...\n"
+	@go run build.go -target enqueue
+	@printf "$(GREEN)[OK]$(NC) Enqueue CLI built: ./bin/enqueue\n"

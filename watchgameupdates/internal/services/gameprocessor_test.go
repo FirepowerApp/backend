@@ -1,7 +1,10 @@
-package handlers
+package services
 
 import (
 	"testing"
+	"time"
+
+	"watchgameupdates/internal/models"
 )
 
 type adjustScoreTestCase struct {
@@ -23,7 +26,7 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "2",
 			homeShootOutGoals: "2",
 			awayShootOutGoals: "1",
-			expectedHomeGoals: "3", // Home gets +1 for shootout win
+			expectedHomeGoals: "3",
 			expectedAwayGoals: "2",
 			expectError:       false,
 		},
@@ -34,7 +37,7 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "3",
 			expectedHomeGoals: "2",
-			expectedAwayGoals: "3", // Away gets +1 for shootout win
+			expectedAwayGoals: "3",
 			expectError:       false,
 		},
 		{
@@ -43,7 +46,7 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "3",
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "1",
-			expectedHomeGoals: "3", // No change for tied shootout
+			expectedHomeGoals: "3",
 			expectedAwayGoals: "3",
 			expectError:       false,
 		},
@@ -73,8 +76,6 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "2",
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "2",
-			expectedHomeGoals: "",
-			expectedAwayGoals: "",
 			expectError:       true,
 		},
 		{
@@ -83,8 +84,6 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "invalid",
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "2",
-			expectedHomeGoals: "",
-			expectedAwayGoals: "",
 			expectError:       true,
 		},
 		{
@@ -93,8 +92,6 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "2",
 			homeShootOutGoals: "invalid",
 			awayShootOutGoals: "2",
-			expectedHomeGoals: "",
-			expectedAwayGoals: "",
 			expectError:       true,
 		},
 		{
@@ -103,8 +100,6 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "2",
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "invalid",
-			expectedHomeGoals: "",
-			expectedAwayGoals: "",
 			expectError:       true,
 		},
 		{
@@ -113,8 +108,6 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "2",
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "2",
-			expectedHomeGoals: "",
-			expectedAwayGoals: "",
 			expectError:       true,
 		},
 		{
@@ -123,8 +116,6 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "",
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "2",
-			expectedHomeGoals: "",
-			expectedAwayGoals: "",
 			expectError:       true,
 		},
 		{
@@ -133,8 +124,6 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "2",
 			homeShootOutGoals: "",
 			awayShootOutGoals: "2",
-			expectedHomeGoals: "",
-			expectedAwayGoals: "",
 			expectError:       true,
 		},
 		{
@@ -143,21 +132,16 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "2",
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "",
-			expectedHomeGoals: "",
-			expectedAwayGoals: "",
 			expectError:       true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Arrange
-			gameData := buildGameData(tc)
+			gameData := buildShootoutGameData(tc)
 
-			// Act
-			err := adjustScoreForShootout(gameData)
+			err := AdjustScoreForShootout(gameData)
 
-			// Assert
 			if tc.expectError {
 				if err == nil {
 					t.Errorf("Expected error but got nil")
@@ -182,10 +166,8 @@ func TestAdjustScoreForShootout(t *testing.T) {
 	}
 }
 
-// buildGameData constructs a gameData map from test case data
-func buildGameData(tc adjustScoreTestCase) map[string]string {
+func buildShootoutGameData(tc adjustScoreTestCase) map[string]string {
 	data := make(map[string]string)
-
 	if tc.homeGoals != "" {
 		data["homeTeamGoals"] = tc.homeGoals
 	}
@@ -198,6 +180,113 @@ func buildGameData(tc adjustScoreTestCase) map[string]string {
 	if tc.awayShootOutGoals != "" {
 		data["awayTeamShootOutGoals"] = tc.awayShootOutGoals
 	}
-
 	return data
+}
+
+func TestShouldSkipExecution(t *testing.T) {
+	t.Run("NilExecutionEnd_ShouldNotSkip", func(t *testing.T) {
+		payload := models.Payload{
+			Game: models.Game{ID: "2024030411"},
+		}
+
+		skip, err := ShouldSkipExecution(payload)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if skip {
+			t.Error("Expected skip=false for nil ExecutionEnd")
+		}
+	})
+
+	t.Run("FutureExecutionEnd_ShouldNotSkip", func(t *testing.T) {
+		future := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
+		payload := models.Payload{
+			Game:         models.Game{ID: "2024030411"},
+			ExecutionEnd: &future,
+		}
+
+		skip, err := ShouldSkipExecution(payload)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if skip {
+			t.Error("Expected skip=false for future ExecutionEnd")
+		}
+	})
+
+	t.Run("PastExecutionEnd_ShouldSkip", func(t *testing.T) {
+		past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
+		payload := models.Payload{
+			Game:         models.Game{ID: "2024030411"},
+			ExecutionEnd: &past,
+		}
+
+		skip, err := ShouldSkipExecution(payload)
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if !skip {
+			t.Error("Expected skip=true for past ExecutionEnd")
+		}
+	})
+
+	t.Run("InvalidExecutionEnd_ReturnsError", func(t *testing.T) {
+		invalid := "not-a-date"
+		payload := models.Payload{
+			Game:         models.Game{ID: "2024030411"},
+			ExecutionEnd: &invalid,
+		}
+
+		skip, err := ShouldSkipExecution(payload)
+		if err == nil {
+			t.Error("Expected error for invalid ExecutionEnd format")
+		}
+		if !skip {
+			t.Error("Expected skip=true when ExecutionEnd is invalid")
+		}
+	})
+}
+
+func TestShouldReschedule(t *testing.T) {
+	t.Run("NonGameEnd_ShouldReschedule", func(t *testing.T) {
+		future := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
+		payload := models.Payload{
+			Game:         models.Game{ID: "2024030411"},
+			ExecutionEnd: &future,
+		}
+		lastPlay := models.Play{TypeDescKey: "shot-on-goal"}
+
+		result := ShouldReschedule(payload, lastPlay)
+		if !result {
+			t.Error("Expected ShouldReschedule=true for non game-end play")
+		}
+	})
+
+	t.Run("GameEnd_ShouldNotReschedule", func(t *testing.T) {
+		future := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
+		payload := models.Payload{
+			Game:         models.Game{ID: "2024030411"},
+			ExecutionEnd: &future,
+		}
+		lastPlay := models.Play{TypeDescKey: "game-end"}
+
+		result := ShouldReschedule(payload, lastPlay)
+		if result {
+			t.Error("Expected ShouldReschedule=false for game-end play")
+		}
+	})
+
+	t.Run("PastExecutionEnd_ShouldNotReschedule", func(t *testing.T) {
+		past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
+		payload := models.Payload{
+			Game:         models.Game{ID: "2024030411"},
+			ExecutionEnd: &past,
+		}
+		lastPlay := models.Play{TypeDescKey: "shot-on-goal"}
+
+		result := ShouldReschedule(payload, lastPlay)
+		if result {
+			t.Error("Expected ShouldReschedule=false when execution end has passed")
+		}
+	})
 }

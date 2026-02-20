@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"watchgameupdates/config"
@@ -34,111 +33,30 @@ func WatchGameUpdatesHandler(
 
 	log.Printf("Raw body: %s", body)
 
-	executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
+	// Check execution window using shared logic
+	skip, err := services.ShouldSkipExecution(payload)
 	if err != nil {
 		http.Error(w, "Invalid scheduled_time format", http.StatusBadRequest)
 		return
 	}
-	if time.Now().After(executionEnd) {
-		log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
+	if skip {
 		return
 	}
 
-	recomputeTypes := map[string]struct{}{
-		"blocked-shot": {},
-		"missed-shot":  {},
-		"shot-on-goal": {},
-		"goal":         {},
-		"game-end":     {},
+	// Use shared game processor for core logic
+	processor := &services.GameProcessor{
+		Fetcher:             fetcher,
+		NotificationService: notificationService,
 	}
-	lastPlay := services.FetchPlayByPlay(payload.Game.ID)
+	result := processor.ProcessGameUpdate(payload)
 
-	if _, ok := recomputeTypes[lastPlay.TypeDescKey]; ok {
-		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlay.TypeDescKey, payload.Game.ID)
-
-		requiredKeys := notificationService.GetAllRequiredDataKeys()
-
-		gameData, err := fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
-		if lastPlay.TypeDescKey == "game-end" {
-			homeGoals, homeGOK := gameData["homeTeamGoals"]
-			awayGoals, awayGOK := gameData["awayTeamGoals"]
-
-			if homeGOK && awayGOK && homeGoals == awayGoals {
-				if err := adjustScoreForShootout(gameData); err != nil {
-					log.Printf("Failed to adjust score for shootout: %v", err)
-				}
-			}
-		}
-
-		if err != nil {
-			log.Printf("ERROR: Failed to fetch and parse MoneyPuck data for game %s: %v", payload.Game.ID, err)
-		}
-
-		notificationService.SendGameEventNotifications(payload.Game, gameData)
-	}
-
-	shouldReschedule := services.ShouldReschedule(payload, lastPlay)
-	log.Printf("Last play type: %s, Should reschedule: %v\n", lastPlay.TypeDescKey, shouldReschedule)
-
-	if shouldReschedule {
+	if result.ShouldReschedule {
 		if err := scheduleNextCheck(payload); err != nil {
 			log.Printf("Failed to schedule next check: %v", err)
 			http.Error(w, "Failed to schedule next check", http.StatusInternalServerError)
 			return
 		}
 	}
-}
-
-func adjustScoreForShootout(gameData map[string]string) error {
-	homeScore, err := strconv.Atoi(gameData["homeTeamGoals"])
-	if err != nil {
-		return fmt.Errorf("invalid home goals: %w", err)
-	}
-
-	awayScore, err := strconv.Atoi(gameData["awayTeamGoals"])
-	if err != nil {
-		return fmt.Errorf("invalid away goals: %w", err)
-	}
-
-	homeSOGoals, err := strconv.Atoi(gameData["homeTeamShootOutGoals"])
-	if err != nil {
-		return fmt.Errorf("invalid home shootout goals: %w", err)
-	}
-
-	awaySOGoals, err := strconv.Atoi(gameData["awayTeamShootOutGoals"])
-	if err != nil {
-		return fmt.Errorf("invalid away shootout goals: %w", err)
-	}
-
-	if homeSOGoals > awaySOGoals {
-		homeScore++
-	} else if awaySOGoals > homeSOGoals {
-		awayScore++
-	}
-
-	gameData["homeTeamGoals"] = strconv.Itoa(homeScore)
-	gameData["awayTeamGoals"] = strconv.Itoa(awayScore)
-
-	return nil
-}
-
-func shouldSkipExecution(payload models.Payload) (bool, error) {
-	if payload.ExecutionEnd != nil {
-		executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
-		if err != nil {
-			log.Printf("Invalid scheduled_time format: %v", err)
-			return true, err
-		}
-
-		if time.Now().After(executionEnd) {
-			log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
-			return true, nil
-		}
-	} else {
-		log.Println("Max execution time not set, proceeding without time check.")
-	}
-
-	return false, nil
 }
 
 // scheduleNextCheck creates a Cloud Task to reschedule the next game check
@@ -162,7 +80,6 @@ func scheduleNextCheck(payload models.Payload) error {
 		return fmt.Errorf("failed to marshal reschedule payload: %w", err)
 	}
 
-	// Configure your queue path - adjust these values for your setup
 	projectID := cfg.ProjectID
 	location := cfg.LocationID
 	queueName := cfg.QueueID

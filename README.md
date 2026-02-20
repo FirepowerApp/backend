@@ -1,6 +1,6 @@
 # CrashTheCrease Backend
 
-A Go-based backend service for tracking and managing NHL game updates using Google Cloud Tasks.
+A Go-based backend service for tracking and managing NHL game updates. Supports two task queue backends: **Google Cloud Tasks** (HTTP mode) and **Redis via Asynq** (worker mode), selectable at runtime with a `--mode` flag.
 
 ## Prerequisites
 
@@ -28,24 +28,56 @@ Your services will be available at:
 - Backend: http://localhost:8080
 - Cloud Tasks Emulator: http://localhost:8123
 
+### Quick Start (Redis Worker Mode)
+
+```bash
+# Start Redis + Asynqmon + backend worker
+make redis-up
+
+# Build the enqueue CLI
+make build-enqueue
+
+# Enqueue a game-watching task
+./bin/enqueue --game=2024030411
+
+# View task queue dashboard
+open http://localhost:8980
+
+# View logs
+make redis-logs
+
+# Stop
+make redis-stop
+```
+
+Your services will be available at:
+- Asynqmon Dashboard: http://localhost:8980
+- Redis: localhost:6379
+
 ## Project Structure
 
 ```
 backend/
-├── watchgameupdates/        # Main service
-│   ├── cmd/                 # Application entry point
-│   ├── internal/            # Internal packages
-│   │   ├── handlers/        # HTTP handlers
-│   │   ├── services/        # Business logic
-│   │   ├── tasks/           # Cloud Tasks integration
-│   │   └── models/          # Data models
-│   ├── config/              # Configuration management
-│   └── Dockerfile           # Container definition
-├── localCloudTasksTest/     # Test client for Cloud Tasks
-├── scripts/                 # Utility scripts
-├── docker-compose.yml       # Service orchestration
-├── Makefile                 # Development commands
-└── README.md                # This file
+├── watchgameupdates/            # Main service
+│   ├── cmd/
+│   │   ├── watchgameupdates/    # App entry point (-mode=http or -mode=worker)
+│   │   └── enqueue/             # CLI tool to enqueue tasks into Redis
+│   ├── internal/
+│   │   ├── handlers/            # HTTP handlers (Cloud Tasks mode)
+│   │   ├── services/            # Shared business logic & game processor
+│   │   ├── tasks/               # Cloud Tasks client + Asynq task types/handler
+│   │   ├── notification/        # Discord notification service
+│   │   └── models/              # Data models
+│   ├── config/                  # Configuration management
+│   ├── Dockerfile               # Container definition (HTTP mode)
+│   └── Dockerfile.worker        # Container definition (worker mode)
+├── localCloudTasksTest/         # Test client for Cloud Tasks
+├── docs/                        # Documentation
+│   └── queue-visualization.md   # Asynqmon dashboard guide
+├── docker-compose.yml           # Cloud Tasks orchestration
+├── docker-compose.redis.yml     # Redis queue orchestration
+├── Makefile                     # Development commands
+└── README.md                    # This file
 ```
 
 ## Development
@@ -72,9 +104,18 @@ make logs-backend        # View backend logs only
 make stop                # Stop containers
 make clean               # Remove containers and cleanup
 
+# Redis Queue (Worker Mode)
+make redis-up            # Start Redis + Asynqmon + worker backend
+make redis-test          # Start Redis test environment (with mock APIs)
+make redis-stop          # Stop Redis containers
+make redis-clean         # Remove Redis containers and volumes
+make redis-logs          # View Redis worker logs
+make redis-status        # Show Redis container status
+
 # Building
 make build               # Build all Go binaries
 make build-backend       # Build backend binary only
+make build-enqueue       # Build the Redis enqueue CLI tool
 
 # Troubleshooting
 make doctor              # Run diagnostic checks
@@ -83,7 +124,7 @@ make port-check          # Check port availability
 
 ### Environment Modes
 
-The system supports two environment modes:
+The system supports two task queue backends and multiple environment modes:
 
 #### Home Mode (Live APIs)
 Uses real NHL and MoneyPuck APIs for development and testing with live data.
@@ -121,6 +162,33 @@ make test LOCAL_MOCK=true
 
 The `LOCAL_MOCK=true` flag tells the system to use your locally built `mockdataapi:latest` image instead of pulling `blnelson/firepowermockdataserver:latest` from the registry. This is useful for testing changes to the mock API without needing to push to a registry.
 
+#### Redis Worker Mode
+
+Uses Redis as the task queue instead of Cloud Tasks. The backend runs as a long-lived worker process that polls Redis for scheduled tasks. Includes the Asynqmon web dashboard for queue visualization.
+
+```bash
+# Start Redis worker environment
+make redis-up
+
+# Build the enqueue CLI and add a task
+make build-enqueue
+./bin/enqueue --game=2024030411 --duration=12m --notify=true
+
+# Open the Asynqmon dashboard to observe the task
+open http://localhost:8980
+
+# Start with mock APIs for testing
+make redis-test
+```
+
+Configuration: `watchgameupdates/.env.redis` (create from `.env.redis.example`)
+
+The `--mode` flag on the binary controls which backend is used:
+- `./bin/watchgameupdates -mode=http` — Cloud Tasks HTTP handler (default)
+- `./bin/watchgameupdates -mode=worker` — Redis/Asynq worker
+
+See [docs/queue-visualization.md](docs/queue-visualization.md) for details on using the Asynqmon dashboard.
+
 ### Configuration
 
 Environment files are located in `watchgameupdates/`:
@@ -143,7 +211,19 @@ STATS_API_BASE_URL=https://moneypuck.com
 DISCORD_BOT_TOKEN=your_bot_token_here
 ```
 
-**`.env.example`** - Template for custom configurations
+**`.env.redis`** - Redis worker mode environment
+```env
+APP_ENV=local
+REDIS_ADDRESS=redis:6379
+REDIS_PASSWORD=
+REDIS_DB=0
+MESSAGE_INTERVAL_SECONDS=60
+PLAYBYPLAY_API_BASE_URL=
+STATS_API_BASE_URL=
+DISCORD_BOT_TOKEN=your_bot_token_here
+```
+
+**`.env.example`** - Template for custom configurations (includes both Cloud Tasks and Redis vars)
 
 Update the `DISCORD_BOT_TOKEN` in your environment files as needed.
 
@@ -233,39 +313,52 @@ cd watchgameupdates && go tool cover -html=coverage.out
 
 ## Architecture
 
-### Services
+### Run Modes
 
-The project uses Docker Compose to orchestrate three main services:
+The backend binary supports two modes via `--mode`:
 
-**Cloud Tasks Emulator**
-- Emulates Google Cloud Tasks for local development
-- Persists across test runs
-- Port: 8123
+| | HTTP Mode (`-mode=http`) | Worker Mode (`-mode=worker`) |
+|---|---|---|
+| **Task broker** | Google Cloud Tasks (or emulator) | Redis (via Asynq) |
+| **Trigger model** | Push — Cloud Tasks POSTs to backend | Pull — worker polls Redis |
+| **Compose file** | `docker-compose.yml` | `docker-compose.redis.yml` |
+| **Monitoring** | Cloud Tasks emulator (port 8123) | Asynqmon dashboard (port 8980) |
+| **Enqueue tool** | `localCloudTasksTest/` | `cmd/enqueue/` |
 
-**Backend (watchgameupdates)**
-- Main application service
-- Processes game updates and manages task queues
-- Port: 8080
+Both modes share the same core game processing logic in `internal/services/gameprocessor.go`.
 
-**Mock Data API** (optional, test mode only)
-- Provides mock NHL and MoneyPuck API responses
-- Ports: 8124 (MoneyPuck), 8125 (NHL)
+### Services (HTTP Mode)
+
+Uses `docker-compose.yml`:
+
+- **Cloud Tasks Emulator** — Port 8123
+- **Backend** (HTTP server) — Port 8080
+- **Mock Data API** (test only) — Ports 8124, 8125
+
+### Services (Worker Mode)
+
+Uses `docker-compose.redis.yml`:
+
+- **Redis** — Port 6379
+- **Asynqmon** (web dashboard) — Port 8980
+- **Backend** (Asynq worker) — no exposed port
+- **Mock Data API** (test profile) — Ports 8124, 8125
 
 ### Key Components
 
-- **WatchGameUpdatesHandler** - Main HTTP handler for game update requests
-- **HTTPGameDataFetcher** - Fetches game data from NHL APIs
-- **PlayByPlay Service** - Processes play-by-play events
-- **Task Factory** - Creates and manages Cloud Tasks
-- **Rescheduler** - Handles task rescheduling based on game state
-- **Fetcher Service** - Retrieves expected goals data from MoneyPuck
+- **GameProcessor** - Shared game-check logic (fetch play-by-play, fetch stats, send notifications)
+- **WatchGameUpdatesHandler** (HTTP) - HTTP handler for Cloud Tasks mode
+- **WatchGameUpdatesHandler** (Asynq) - Task handler for Redis worker mode
+- **HTTPGameDataFetcher** - Fetches game data from NHL/MoneyPuck APIs
+- **Rescheduler** - Determines if a game check should be rescheduled
 
 ### Data Flow
 
 ```
-Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Reschedule/Complete
-                    ↓
-              Discord Notifications
+HTTP Mode:  Cloud Tasks → HTTP Handler → GameProcessor → Reschedule via Cloud Tasks
+Worker Mode:     Redis  → Asynq Handler → GameProcessor → Reschedule via Redis enqueue
+                                  ↓
+                          Discord Notifications
 ```
 
 ## Advanced Usage
@@ -298,7 +391,12 @@ make build
 
 # Build specific target
 go run build.go -target watchgameupdates
+go run build.go -target enqueue
 go run build.go -target localCloudTasksTest
+
+# Run in specific mode
+./bin/watchgameupdates -mode=http    # Cloud Tasks HTTP server
+./bin/watchgameupdates -mode=worker  # Redis/Asynq worker
 
 # Binaries are output to ./bin/
 ```
@@ -454,7 +552,7 @@ GET https://moneypuck.com/moneypuck/gameData/{season}/{game_id}.csv
 
 ## Deployment
 
-### Containerized Deployment
+### Cloud Tasks (HTTP Mode)
 
 ```bash
 cd watchgameupdates
@@ -462,18 +560,22 @@ docker build -t crashthecrease-backend .
 docker run -p 8080:8080 crashthecrease-backend
 ```
 
-### Google Cloud Platform
+Deploys on Google Cloud Run / Cloud Functions with Google Cloud Tasks.
 
-The service is designed to deploy on:
-- **Google Cloud Run** - Containerized serverless deployment
-- **Google Cloud Functions** - Function-as-a-Service deployment
-- **Google Cloud Tasks** - Managed task queue service
+### Redis Worker Mode
 
-Update environment variables for production:
-- Remove `CLOUD_TASKS_EMULATOR_HOST` (use real Cloud Tasks)
-- Set proper `GCP_PROJECT_ID` and `GCP_LOCATION`
-- Configure production API endpoints
-- Set production Discord webhook URLs
+```bash
+cd watchgameupdates
+docker build -f Dockerfile.worker -t crashthecrease-worker .
+docker run --env-file .env.redis crashthecrease-worker
+```
+
+Requires a Redis instance. Works with any Redis provider:
+- **Local** — Docker Redis
+- **AWS** — ElastiCache
+- **Managed** — Redis Cloud, Upstash, etc.
+
+Set `REDIS_ADDRESS`, `REDIS_PASSWORD`, and `REDIS_DB` in your environment.
 
 ## Development Workflow
 

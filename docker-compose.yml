@@ -1,95 +1,27 @@
-# CrashTheCrease Backend - Docker Compose Configuration
-# This replaces the functionality of setup-local.sh and run_automated_test.sh
-#
-# Usage:
-#   make setup          # Pull images and setup
-#   make home           # Start home environment (live APIs)
-#   make test           # Run full automated tests
-#   make test-containers # Start containers for manual testing
-#   make logs           # View logs
-#   make clean          # Stop and remove containers
-#
-# Or use docker compose directly:
-#   docker compose up                    # Start with default profile
-#   docker compose --profile test up     # Start test environment
-#   docker compose --profile home up     # Start home environment
-#   docker compose down                  # Stop all services
-
-x-common-settings: &common-settings
-  networks:
-    - net
-  restart: unless-stopped
-
-x-healthcheck-defaults: &healthcheck-defaults
-  interval: 5s
-  timeout: 3s
-  retries: 30
-  start_period: 10s
-
 services:
-  # Cloud Tasks Emulator - Always available, persisted across runs
   cloudtasks-emulator:
-    <<: *common-settings
     image: ghcr.io/aertje/cloud-tasks-emulator:latest
     command: --host=0.0.0.0
     ports:
       - "8123:8123"
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8123 || exit 1"]
-    # Emulator persists across runs - only stopped manually or with 'docker compose down'
+    networks:
+      - net
     restart: unless-stopped
-    profiles:
-      - home
-      - test
-      - default
 
-  # Backend Service - Main application
-  # Note: Container name is dynamically generated with timestamp for log persistence
   backend:
-    <<: *common-settings
     build:
       context: ./watchgameupdates
       dockerfile: Dockerfile
     image: watchgameupdates:latest
-    # No container_name - allows unique names per execution for log history
     ports:
       - "8080:8080"
-    env_file:
-      - ./watchgameupdates/.env.local  # Default to local testing
     environment:
-      # Override with environment-specific settings
       - PORT=8080
     depends_on:
-      cloudtasks-emulator:
-        condition: service_started
-    healthcheck:
-      <<: *healthcheck-defaults
-      # Backend returns 400/405 for GET requests, which is expected
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080 || [ $? -eq 8 ] || exit 1"]
-    profiles:
-      - home
-      - test
-      - default
-
-  # Mock Data API Test Server (optional - only for testing)
-  # Note: This container must be built separately if using test profile
-  # The testserver directory was removed in commit 606aa80 but can be reconstructed
-  mockdataapi:
-    <<: *common-settings
-    image: blnelson/firepowermockdataserver:latest
-    ports:
-      - "8124:8124"  # MoneyPuck API mock
-      - "8125:8125"  # NHL API mock
-    environment:
-      - PLAYBYPLAY_PORT=8125
-      - STATS_PORT=8124
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8125/v1/gamecenter/test/play-by-play || exit 1"]
-    # Only start in test profile
-    profiles:
-      - test
+      - cloudtasks-emulator
+    networks:
+      - net
+    restart: unless-stopped
 
 networks:
   net:

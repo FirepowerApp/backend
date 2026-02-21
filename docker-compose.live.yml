@@ -1,0 +1,7 @@
+# Docker Compose override for live game data mode (make live)
+# Points the backend at production NHL and MoneyPuck APIs via .env.home
+
+services:
+  backend:
+    env_file:
+      - ./watchgameupdates/.env.home

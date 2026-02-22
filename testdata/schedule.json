@@ -1,0 +1,72 @@
+{
+  "gameWeek": [
+    {
+      "date": "2025-10-08",
+      "games": [
+        {
+          "id": 2025020001,
+          "gameDate": "2025-10-08",
+          "startTimeUTC": "2025-10-08T23:00:00Z",
+          "gameState": "FUT",
+          "gameType": 2,
+          "homeTeam": {
+            "id": 10,
+            "commonName": {"default": "Maple Leafs"},
+            "placeName": {"default": "Toronto"},
+            "placeNameWithPreposition": {"default": "Toronto"},
+            "abbrev": "TOR"
+          },
+          "awayTeam": {
+            "id": 8,
+            "commonName": {"default": "Canadiens"},
+            "placeName": {"default": "Montr\u00e9al"},
+            "placeNameWithPreposition": {"default": "Montr\u00e9al", "fr": "de Montr\u00e9al"},
+            "abbrev": "MTL"
+          }
+        },
+        {
+          "id": 2025020002,
+          "gameDate": "2025-10-08",
+          "startTimeUTC": "2025-10-09T00:00:00Z",
+          "gameState": "FUT",
+          "gameType": 2,
+          "homeTeam": {
+            "id": 6,
+            "commonName": {"default": "Bruins"},
+            "placeName": {"default": "Boston"},
+            "placeNameWithPreposition": {"default": "Boston"},
+            "abbrev": "BOS"
+          },
+          "awayTeam": {
+            "id": 3,
+            "commonName": {"default": "Rangers"},
+            "placeName": {"default": "New York"},
+            "placeNameWithPreposition": {"default": "New York"},
+            "abbrev": "NYR"
+          }
+        },
+        {
+          "id": 2025020003,
+          "gameDate": "2025-10-08",
+          "startTimeUTC": "2025-10-09T02:00:00Z",
+          "gameState": "FUT",
+          "gameType": 2,
+          "homeTeam": {
+            "id": 55,
+            "commonName": {"default": "Kraken"},
+            "placeName": {"default": "Seattle"},
+            "placeNameWithPreposition": {"default": "Seattle"},
+            "abbrev": "SEA"
+          },
+          "awayTeam": {
+            "id": 19,
+            "commonName": {"default": "Blues"},
+            "placeName": {"default": "St. Louis"},
+            "placeNameWithPreposition": {"default": "St. Louis", "fr": "de St. Louis"},
+            "abbrev": "STL"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -10,8 +10,11 @@
 #   make clean          - Stop and remove current containers
 #   make build          - Build all Go binaries
 #   make pull           - Pull all required Docker images (with retry)
+#   make schedule       - Start full system + run scheduler (live NHL data)
+#   make schedule-test  - Start full system + run scheduler (test data)
+#   make reschedule     - Re-trigger scheduler (backend already running)
 
-.PHONY: help setup home test test-containers clean logs build pull check-deps check-docker check-go pull-with-retry status stop restart clean-all list-containers
+.PHONY: help setup home test test-containers clean logs build pull check-deps check-docker check-go pull-with-retry status stop restart clean-all list-containers schedule schedule-test reschedule build-scheduler
 
 # Color output
 BLUE := \033[0;34m
@@ -299,6 +302,72 @@ test: check-docker ## Run full automated integration test (use LOCAL_MOCK=true f
 		exit 1; \
 	fi
 
+##@ Scheduler
+
+schedule: check-docker ## Start full system and run scheduler with live NHL data
+	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler...\n"
+	@if [ ! -f $(PROJECT_FILE) ]; then \
+		echo "$(PROJECT_NAME)" > $(PROJECT_FILE); \
+	fi
+	@PROJECT=$$(cat $(PROJECT_FILE)); \
+	printf "$(BLUE)[INFO]$(NC) Project: $$PROJECT\n"; \
+	docker rmi -f schedulegametrackers:latest 2>/dev/null || true; \
+	docker rmi -f watchgameupdates:latest 2>/dev/null || true; \
+	printf "$(BLUE)[INFO]$(NC) Building images...\n"; \
+	if ! docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_HOME) \
+		--profile home --profile scheduler build --progress=plain 2>&1 | tee /tmp/build.log; then \
+		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
+		exit 1; \
+	fi; \
+	printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"; \
+	printf "$(BLUE)[INFO]$(NC) Starting backend + cloud tasks emulator + scheduler...\n"; \
+	docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_HOME) \
+		--profile home --profile scheduler up -d; \
+	printf "$(GREEN)[SUCCESS]$(NC) System started. Scheduler will run once dependencies are healthy.\n"; \
+	printf "\n$(BLUE)[INFO]$(NC) Services available at:\n"; \
+	printf "  • Backend: http://localhost:8080\n"; \
+	printf "  • Cloud Tasks Emulator: http://localhost:8123\n"; \
+	printf "\n$(BLUE)[INFO]$(NC) View logs with: make logs\n"; \
+	printf "$(BLUE)[INFO]$(NC) Re-trigger scheduler: make reschedule\n"; \
+	printf "$(BLUE)[INFO]$(NC) Stop with: make stop\n"
+
+schedule-test: check-docker ## Start full system and run scheduler with local test data
+	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (test data)...\n"
+	@if [ ! -f $(PROJECT_FILE) ]; then \
+		echo "$(PROJECT_NAME)" > $(PROJECT_FILE); \
+	fi
+	@PROJECT=$$(cat $(PROJECT_FILE)); \
+	printf "$(BLUE)[INFO]$(NC) Project: $$PROJECT\n"; \
+	docker rmi -f schedulegametrackers:latest 2>/dev/null || true; \
+	docker rmi -f watchgameupdates:latest 2>/dev/null || true; \
+	printf "$(BLUE)[INFO]$(NC) Building images...\n"; \
+	if ! docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) \
+		--profile test --profile scheduler build --progress=plain 2>&1 | tee /tmp/build.log; then \
+		printf "$(RED)[ERROR]$(NC) Build failed! Check output above for details.\n"; \
+		exit 1; \
+	fi; \
+	printf "$(GREEN)[SUCCESS]$(NC) Build completed\n"; \
+	printf "$(BLUE)[INFO]$(NC) Starting backend + cloud tasks emulator + scheduler (test data)...\n"; \
+	docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_TEST) \
+		--profile test --profile scheduler up -d; \
+	printf "$(GREEN)[SUCCESS]$(NC) System started with test data.\n"; \
+	printf "\n$(BLUE)[INFO]$(NC) View logs with: make logs\n"; \
+	printf "$(BLUE)[INFO]$(NC) Stop with: make stop\n"
+
+reschedule: check-docker ## Re-trigger scheduler (backend must already be running)
+	@if [ ! -f $(PROJECT_FILE) ]; then \
+		printf "$(RED)[ERROR]$(NC) No running project. Use 'make schedule' to start everything.\n"; \
+		exit 1; \
+	fi
+	@PROJECT=$$(cat $(PROJECT_FILE)); \
+	printf "$(BLUE)[INFO]$(NC) Re-building and re-triggering scheduler...\n"; \
+	docker rmi -f schedulegametrackers:latest 2>/dev/null || true; \
+	docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_HOME) \
+		--profile home --profile scheduler build scheduler --progress=plain; \
+	docker compose -p $$PROJECT -f $(COMPOSE_FILE) -f $(COMPOSE_HOME) \
+		--profile home --profile scheduler up -d scheduler; \
+	printf "$(GREEN)[SUCCESS]$(NC) Scheduler re-triggered. View logs with: make logs\n"
+
 ##@ Container Management
 
 status: ## Show status of current containers
@@ -430,6 +499,10 @@ build-backend: check-go ## Build backend binary only
 	@go run build.go -target watchgameupdates
 	@printf "$(GREEN)[SUCCESS]$(NC) Backend binary built: ./bin/watchgameupdates\n"
 
+build-scheduler: check-go ## Build scheduler binary only
+	@printf "$(BLUE)[INFO]$(NC) Building scheduler binary...\n"
+	@go run build.go -target schedulegametrackers
+	@printf "$(GREEN)[SUCCESS]$(NC) Scheduler binary built: ./bin/schedulegametrackers\n"
 
 ##@ Utilities
 

@@ -22,4 +22,8 @@ services:
     profiles:
       - home
 
+  scheduler:
+    env_file:
+      - ./watchgameupdates/.env.home
+
   # mockdataapi is not needed in home mode - backend connects to live APIs

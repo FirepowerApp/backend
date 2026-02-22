@@ -20,6 +20,14 @@ services:
       # PLAYBYPLAY_API_BASE_URL=http://mockdataapi-testserver-1:8125
       # STATS_API_BASE_URL=http://mockdataapi-testserver-1:8124
 
+  scheduler:
+    env_file:
+      - ./watchgameupdates/.env.local
+    environment:
+      - SCHEDULE_FILE=/testdata/schedule.json
+    volumes:
+      - ./testdata:/testdata:ro
+
   mockdataapi:
     # Force pull latest image if available, or use existing
     pull_policy: if_not_present

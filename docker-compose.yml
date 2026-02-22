@@ -91,6 +91,25 @@ services:
     profiles:
       - test
 
+  # Scheduler - Fetches NHL schedule and creates game tracking tasks
+  # Run-once process, not a long-running service
+  scheduler:
+    <<: *common-settings
+    build:
+      context: ./watchgameupdates
+      dockerfile: Dockerfile.scheduler
+    image: schedulegametrackers:latest
+    env_file:
+      - ./watchgameupdates/.env.local
+    depends_on:
+      cloudtasks-emulator:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    profiles:
+      - scheduler
+    restart: "no"
+
 networks:
   net:
     driver: bridge

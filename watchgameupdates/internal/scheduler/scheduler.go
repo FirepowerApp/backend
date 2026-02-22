@@ -8,20 +8,27 @@ import (
 	"time"
 
 	"watchgameupdates/internal/models"
-	"watchgameupdates/internal/queue"
 	"watchgameupdates/internal/schedule"
 )
 
+// TaskEnqueuer is the interface used by the scheduler to enqueue game tasks.
+// This is defined here (at the consumer) per Go convention. Concrete
+// implementations live in the queue package (Cloud Tasks, future Redis, etc.).
+type TaskEnqueuer interface {
+	Enqueue(ctx context.Context, payload models.Payload, deliverAt time.Time) error
+	Close() error
+}
+
 // Scheduler fetches the NHL schedule and enqueues game tracking tasks.
 type Scheduler struct {
-	fetcher          schedule.ScheduleFetcher
-	queue            queue.GameTaskQueue
-	gameMaxDuration  time.Duration
-	shouldNotify     bool
+	fetcher         schedule.ScheduleFetcher
+	queue           TaskEnqueuer
+	gameMaxDuration time.Duration
+	shouldNotify    bool
 }
 
 // New creates a new Scheduler.
-func New(fetcher schedule.ScheduleFetcher, q queue.GameTaskQueue, gameMaxDurationHours int, shouldNotify bool) *Scheduler {
+func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool) *Scheduler {
 	return &Scheduler{
 		fetcher:         fetcher,
 		queue:           q,

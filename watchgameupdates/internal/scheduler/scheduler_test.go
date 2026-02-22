@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,7 +12,9 @@ import (
 
 // mockQueue records enqueued tasks for testing.
 type mockQueue struct {
-	tasks []enqueuedTask
+	tasks   []enqueuedTask
+	failOn  int // fail on the Nth call (0 = never fail)
+	callNum int
 }
 
 type enqueuedTask struct {
@@ -20,6 +23,10 @@ type enqueuedTask struct {
 }
 
 func (q *mockQueue) Enqueue(_ context.Context, payload models.Payload, deliverAt time.Time) error {
+	q.callNum++
+	if q.failOn > 0 && q.callNum == q.failOn {
+		return fmt.Errorf("simulated enqueue failure")
+	}
 	q.tasks = append(q.tasks, enqueuedTask{payload: payload, deliverAt: deliverAt})
 	return nil
 }
@@ -82,6 +89,14 @@ func TestScheduler_Run_SchedulesFutureGames(t *testing.T) {
 	}
 	if q.tasks[0].payload.ShouldNotify == nil || !*q.tasks[0].payload.ShouldNotify {
 		t.Error("expected ShouldNotify to be true")
+	}
+
+	// Verify second task
+	if q.tasks[1].payload.Game.ID != "2025020002" {
+		t.Errorf("expected game ID 2025020002, got %s", q.tasks[1].payload.Game.ID)
+	}
+	if q.tasks[1].payload.Game.HomeTeam.Abbrev != "BOS" {
+		t.Errorf("expected home team BOS, got %s", q.tasks[1].payload.Game.HomeTeam.Abbrev)
 	}
 }
 
@@ -188,5 +203,120 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 	// Verify ShouldNotify is false
 	if q.tasks[0].payload.ShouldNotify == nil || *q.tasks[0].payload.ShouldNotify {
 		t.Error("expected ShouldNotify to be false")
+	}
+
+	// Verify game data is correctly mapped
+	if q.tasks[0].payload.Game.StartTime != startTime.Format(time.RFC3339) {
+		t.Errorf("expected StartTime %s, got %s", startTime.Format(time.RFC3339), q.tasks[0].payload.Game.StartTime)
+	}
+	if q.tasks[0].payload.Game.GameDate != "2025-10-08" {
+		t.Errorf("expected GameDate 2025-10-08, got %s", q.tasks[0].payload.Game.GameDate)
+	}
+}
+
+func TestScheduler_Run_FetcherError(t *testing.T) {
+	q := &mockQueue{}
+	fetcher := &mockFetcher{err: fmt.Errorf("NHL API unavailable")}
+	s := New(fetcher, q, 5, true)
+
+	err := s.Run(context.Background(), "2025-10-08")
+	if err == nil {
+		t.Fatal("expected error from fetcher, got nil")
+	}
+
+	if len(q.tasks) != 0 {
+		t.Errorf("expected 0 tasks when fetcher fails, got %d", len(q.tasks))
+	}
+}
+
+func TestScheduler_Run_EnqueueErrorContinues(t *testing.T) {
+	futureTime := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020001,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    "FUT",
+			HomeTeam:     models.Team{Abbrev: "TOR", ID: 10},
+			AwayTeam:     models.Team{Abbrev: "MTL", ID: 8},
+		},
+		{
+			ID:           2025020002,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    "FUT",
+			HomeTeam:     models.Team{Abbrev: "BOS", ID: 6},
+			AwayTeam:     models.Team{Abbrev: "NYR", ID: 3},
+		},
+	}
+
+	// Fail on the first enqueue, succeed on the second
+	q := &mockQueue{failOn: 1}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true)
+
+	err := s.Run(context.Background(), "2025-10-08")
+	if err != nil {
+		t.Fatalf("Run should not return error when individual enqueues fail: %v", err)
+	}
+
+	// Only the second game should have been enqueued
+	if len(q.tasks) != 1 {
+		t.Fatalf("expected 1 task (second game after first failed), got %d", len(q.tasks))
+	}
+
+	if q.tasks[0].payload.Game.ID != "2025020002" {
+		t.Errorf("expected game ID 2025020002, got %s", q.tasks[0].payload.Game.ID)
+	}
+}
+
+func TestScheduler_Run_InvalidStartTime(t *testing.T) {
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020001,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: "not-a-valid-time",
+			GameState:    "FUT",
+			HomeTeam:     models.Team{Abbrev: "TOR", ID: 10},
+			AwayTeam:     models.Team{Abbrev: "MTL", ID: 8},
+		},
+	}
+
+	q := &mockQueue{}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true)
+
+	err := s.Run(context.Background(), "2025-10-08")
+	if err != nil {
+		t.Fatalf("Run should not return error for invalid start time: %v", err)
+	}
+
+	if len(q.tasks) != 0 {
+		t.Fatalf("expected 0 tasks for game with invalid start time, got %d", len(q.tasks))
+	}
+}
+
+func TestScheduler_Run_GameIDConversion(t *testing.T) {
+	futureTime := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020999,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    "FUT",
+			HomeTeam:     models.Team{Abbrev: "TOR", ID: 10},
+			AwayTeam:     models.Team{Abbrev: "MTL", ID: 8},
+		},
+	}
+
+	q := &mockQueue{}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true)
+
+	s.Run(context.Background(), "2025-10-08")
+
+	// Verify int→string conversion of game ID
+	if q.tasks[0].payload.Game.ID != "2025020999" {
+		t.Errorf("expected game ID string '2025020999', got '%s'", q.tasks[0].payload.Game.ID)
 	}
 }

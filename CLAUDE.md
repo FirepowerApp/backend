@@ -6,6 +6,31 @@ This file provides guidance for AI assistants working in this repository.
 
 CrashTheCrease Backend is a Go-based service that tracks NHL game updates and sends Discord notifications using Google Cloud Tasks for scheduling.
 
+## Design Principles
+
+All changes to this codebase should follow the [Twelve-Factor App](https://12factor.net/) methodology:
+
+| Factor | Guideline |
+|---|---|
+| **Codebase** | One codebase tracked in Git, many deploys |
+| **Dependencies** | Explicitly declare and isolate dependencies via `go.mod` |
+| **Config** | Store config in environment variables, never in code |
+| **Backing services** | Treat external services (Discord, NHL API, Cloud Tasks) as attached resources |
+| **Build, release, run** | Strictly separate build and run stages |
+| **Processes** | Execute the app as stateless processes |
+| **Port binding** | Export services via port binding |
+| **Concurrency** | Scale out via the process model |
+| **Disposability** | Maximize robustness with fast startup and graceful shutdown |
+| **Dev/prod parity** | Keep development, staging, and production as similar as possible |
+| **Logs** | Treat logs as event streams (stdout) |
+| **Admin processes** | Run admin/management tasks as one-off processes |
+
+When making changes, ensure:
+- Configuration comes from environment variables, not hardcoded values
+- Services are stateless and can be restarted without data loss
+- External dependencies are injected and swappable (e.g., mock APIs for testing)
+- Logs go to stdout/stderr with no local file dependencies
+
 ## Development Setup
 
 **Prerequisites:** Go 1.23.3+, Docker, Make

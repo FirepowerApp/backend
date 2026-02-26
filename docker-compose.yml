@@ -31,12 +31,16 @@ services:
   cloudtasks-emulator:
     <<: *common-settings
     image: ghcr.io/aertje/cloud-tasks-emulator:latest
-    command: --host=0.0.0.0
+    # Pre-create queue matching .env.local config (localproject/us-south1/gameschedule)
+    command: >-
+      --host=0.0.0.0
+      -queue projects/localproject/locations/us-south1/queues/gameschedule
     ports:
       - "8123:8123"
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8123 || exit 1"]
+      # Emulator is gRPC, not HTTP - use TCP port check instead
+      test: ["CMD-SHELL", "nc -z localhost 8123 || exit 1"]
     # Emulator persists across runs - only stopped manually or with 'docker compose down'
     restart: unless-stopped
     profiles:
@@ -63,10 +67,8 @@ services:
     depends_on:
       cloudtasks-emulator:
         condition: service_started
-    healthcheck:
-      <<: *healthcheck-defaults
-      # Backend returns 400/405 for GET requests, which is expected
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8080 || [ $? -eq 8 ] || exit 1"]
+    # Note: healthcheck disabled - distroless image has no shell/wget
+    # If health checks are needed, switch to alpine base or add a /health endpoint
     profiles:
       - home
       - test
@@ -105,7 +107,9 @@ services:
       cloudtasks-emulator:
         condition: service_healthy
       backend:
-        condition: service_healthy
+        # Backend uses distroless image (no shell/wget for health checks)
+        # Use service_started with a startup delay instead
+        condition: service_started
     profiles:
       - scheduler
     restart: "no"

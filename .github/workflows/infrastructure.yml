@@ -11,10 +11,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Placeholder
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_CLIENT_ID }}
+          oauth-client-secret: ${{ secrets.TS_CLIENT_SECRET }}
+
+      - name: Configure kubectl
         run: |
-          echo "TODO: implement k8s infrastructure provisioning"
-          echo "  - authenticate to cloud provider"
-          echo "  - create namespace"
-          echo "  - configure secrets and image pull credentials"
-          echo "  - apply resource quotas and network policies"
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Apply namespace
+        run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Apply ConfigMap
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
+          CLOUD_TASKS_QUEUE: ${{ secrets.CLOUD_TASKS_QUEUE }}
+        run: envsubst < k8s/configmap.yaml | kubectl apply -f -
+
+      - name: Apply backend service
+        run: kubectl apply -f k8s/service-backend.yaml
+
+      - name: Apply cloudtasks service
+        run: kubectl apply -f k8s/service-cloudtasks.yaml

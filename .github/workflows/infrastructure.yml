@@ -11,21 +11,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Verify Tailscale secrets are set
-        env:
-          TS_CLIENT_ID: ${{ secrets.TS_CLIENT_ID }}
-          TS_CLIENT_SECRET: ${{ secrets.TS_CLIENT_SECRET }}
-        run: |
-          if [ -z "$TS_CLIENT_ID" ]; then
-            echo "ERROR: TS_CLIENT_ID secret is empty or not accessible to this repository"
-            exit 1
-          fi
-          if [ -z "$TS_CLIENT_SECRET" ]; then
-            echo "ERROR: TS_CLIENT_SECRET secret is empty or not accessible to this repository"
-            exit 1
-          fi
-          echo "Tailscale credentials are present"
-
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
@@ -54,3 +39,19 @@ jobs:
 
       - name: Apply cloudtasks service
         run: kubectl apply -f k8s/service-cloudtasks.yaml
+
+      - name: Create app-secrets
+        run: |
+          kubectl create secret generic app-secrets \
+            --namespace=firepower \
+            --from-literal=DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create ghcr-pull-secret
+        run: |
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --namespace=firepower \
+            --docker-server=ghcr.io \
+            --docker-username=${{ secrets.GHCR_USERNAME }} \
+            --docker-password=${{ secrets.GHCR_TOKEN }} \
+            --dry-run=client -o yaml | kubectl apply -f -

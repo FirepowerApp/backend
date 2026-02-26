@@ -11,6 +11,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Verify Tailscale secrets are set
+        env:
+          TS_CLIENT_ID: ${{ secrets.TS_CLIENT_ID }}
+          TS_CLIENT_SECRET: ${{ secrets.TS_CLIENT_SECRET }}
+        run: |
+          if [ -z "$TS_CLIENT_ID" ]; then
+            echo "ERROR: TS_CLIENT_ID secret is empty or not accessible to this repository"
+            exit 1
+          fi
+          if [ -z "$TS_CLIENT_SECRET" ]; then
+            echo "ERROR: TS_CLIENT_SECRET secret is empty or not accessible to this repository"
+            exit 1
+          fi
+          echo "Tailscale credentials are present"
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:

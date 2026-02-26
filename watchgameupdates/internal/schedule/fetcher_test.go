@@ -79,13 +79,21 @@ func TestHTTPScheduleFetcher_NoGamesForDate(t *testing.T) {
 	}
 }
 
-func TestFileScheduleFetcher_FetchSchedule(t *testing.T) {
+func TestFileScheduleFetcher_ReturnsAllGamesIgnoringDate(t *testing.T) {
+	// File contains games for multiple dates
 	resp := ScheduleResponse{
 		GameWeek: []GameWeekDay{
+			{
+				Date: "2025-10-07",
+				Games: []ScheduleGame{
+					{ID: 2025020001, GameDate: "2025-10-07", GameState: "FUT", StartTimeUTC: "2025-10-07T23:00:00Z"},
+				},
+			},
 			{
 				Date: "2025-10-08",
 				Games: []ScheduleGame{
 					{ID: 2025020010, GameDate: "2025-10-08", GameState: "FUT", StartTimeUTC: "2025-10-08T23:00:00Z"},
+					{ID: 2025020011, GameDate: "2025-10-08", GameState: "FUT", StartTimeUTC: "2025-10-08T23:30:00Z"},
 				},
 			},
 		},
@@ -99,17 +107,15 @@ func TestFileScheduleFetcher_FetchSchedule(t *testing.T) {
 	}
 
 	fetcher := &FileScheduleFetcher{FilePath: filePath}
-	games, err := fetcher.FetchSchedule(context.Background(), "2025-10-08")
+
+	// Date parameter is ignored - all games from file are returned
+	games, err := fetcher.FetchSchedule(context.Background(), "2099-01-01")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(games) != 1 {
-		t.Fatalf("expected 1 game, got %d", len(games))
-	}
-
-	if games[0].ID != 2025020010 {
-		t.Errorf("expected game ID 2025020010, got %d", games[0].ID)
+	if len(games) != 3 {
+		t.Fatalf("expected 3 games (all from file), got %d", len(games))
 	}
 }
 

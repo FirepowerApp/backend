@@ -8,6 +8,14 @@ services:
     depends_on:
       - mockdataapi
 
+  scheduler:
+    env_file:
+      - ./watchgameupdates/.env.local
+    environment:
+      - SCHEDULE_FILE=/testdata/schedule.json
+    volumes:
+      - ./testdata:/testdata:ro
+
   mockdataapi:
     image: blnelson/firepowermockdataserver:latest
     ports:

@@ -1,0 +1,43 @@
+{
+  "gameWeek": [
+    {
+      "date": "2025-10-08",
+      "games": [
+        {
+          "id": 2025020001,
+          "gameDate": "2025-10-08",
+          "startTimeUTC": "2025-10-08T23:00:00Z",
+          "gameState": "FUT",
+          "gameType": 2,
+          "homeTeam": {
+            "id": 10,
+            "commonName": {
+              "default": "Maple Leafs"
+            },
+            "placeName": {
+              "default": "Toronto"
+            },
+            "placeNameWithPreposition": {
+              "default": "Toronto"
+            },
+            "abbrev": "TOR"
+          },
+          "awayTeam": {
+            "id": 8,
+            "commonName": {
+              "default": "Canadiens"
+            },
+            "placeName": {
+              "default": "Montr\u00e9al"
+            },
+            "placeNameWithPreposition": {
+              "default": "Montr\u00e9al",
+              "fr": "de Montr\u00e9al"
+            },
+            "abbrev": "MTL"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 services:
   cloudtasks-emulator:
     image: ghcr.io/aertje/cloud-tasks-emulator:latest
-    command: --host=0.0.0.0
+    command: >-
+      --host=0.0.0.0
+      -queue projects/localproject/locations/us-south1/queues/gameschedule
     ports:
       - "8123:8123"
     networks:
@@ -22,6 +24,20 @@ services:
     networks:
       - net
     restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ./watchgameupdates
+      dockerfile: Dockerfile.scheduler
+    image: schedulegametrackers:latest
+    depends_on:
+      - cloudtasks-emulator
+      - backend
+    networks:
+      - net
+    profiles:
+      - scheduler
+    restart: "no"
 
 networks:
   net:

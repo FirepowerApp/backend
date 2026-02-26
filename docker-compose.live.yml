@@ -5,3 +5,7 @@ services:
   backend:
     env_file:
       - ./watchgameupdates/.env.home
+
+  scheduler:
+    env_file:
+      - ./watchgameupdates/.env.home

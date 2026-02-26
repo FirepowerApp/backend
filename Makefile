@@ -5,8 +5,10 @@
 #   make emulator  - Pull game data emulator from registry and start all components (.env.local)
 #   make stop      - Stop all running containers
 #   make logs      - Follow logs from running containers
+#   make schedule  - Start full system and run scheduler with live NHL data
+#   make schedule-test - Start full system and run scheduler with test data
 
-.PHONY: help live emulator stop logs
+.PHONY: help live emulator stop logs schedule schedule-test
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -15,7 +17,7 @@ NC    := \033[0m
 .DEFAULT_GOAL := help
 
 help: ## Show available targets
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(BLUE)%-10s$(NC) %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(BLUE)%-15s$(NC) %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 live: ## Start handler and tasks queue with live game data APIs (.env.home)
 	@docker compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
@@ -40,3 +42,22 @@ stop: ## Stop all running containers
 
 logs: ## Follow logs from running containers
 	@docker compose logs -f
+
+schedule: ## Start full system and run scheduler with live NHL data
+	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (live data)...\n"
+	@docker compose -f docker-compose.yml -f docker-compose.live.yml --profile scheduler up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with scheduler\n"
+	@printf "  Backend:        http://localhost:8080\n"
+	@printf "  Tasks emulator: http://localhost:8123\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
+
+schedule-test: ## Start full system and run scheduler with test data
+	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
+	@docker pull blnelson/firepowermockdataserver:latest
+	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (test data)...\n"
+	@docker compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with scheduler (test data)\n"
+	@printf "  Backend:            http://localhost:8080\n"
+	@printf "  Tasks emulator:     http://localhost:8123\n"
+	@printf "  Game data emulator: http://localhost:8125 (NHL), http://localhost:8124 (MoneyPuck)\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"

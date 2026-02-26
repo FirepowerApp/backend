@@ -49,6 +49,7 @@ func WatchGameUpdatesHandler(
 		"missed-shot":  {},
 		"shot-on-goal": {},
 		"goal":         {},
+		"period-end":   {},
 		"game-end":     {},
 	}
 	lastPlay := services.FetchPlayByPlay(payload.Game.ID)

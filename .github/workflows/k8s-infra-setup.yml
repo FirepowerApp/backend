@@ -1,4 +1,4 @@
-name: Kubernetes Infrastructure Setup
+name: Infrastructure
 
 on:
   workflow_dispatch:

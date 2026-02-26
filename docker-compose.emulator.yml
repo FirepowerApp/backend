@@ -1,0 +1,33 @@
+# Docker Compose override for game data emulator mode (make emulator)
+# Adds the mock game data server and points the backend at it via .env.local
+
+services:
+  backend:
+    env_file:
+      - ./watchgameupdates/.env.local
+    depends_on:
+      - mockdataapi
+
+  scheduler:
+    env_file:
+      - ./watchgameupdates/.env.local
+    environment:
+      - SCHEDULE_FILE=/testdata/schedule.json
+    volumes:
+      - ./testdata:/testdata:ro
+
+  mockdataapi:
+    image: blnelson/firepowermockdataserver:latest
+    ports:
+      - "8124:8124"  # MoneyPuck API mock
+      - "8125:8125"  # NHL API mock
+    environment:
+      - PLAYBYPLAY_PORT=8125
+      - STATS_PORT=8124
+    networks:
+      - net
+    restart: unless-stopped
+
+networks:
+  net:
+    driver: bridge

@@ -1,0 +1,118 @@
+name: Kubernetes Infrastructure Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'GKE cluster name'
+        required: true
+        type: string
+      namespace:
+        description: 'Kubernetes namespace to create/configure'
+        required: true
+        default: 'crashthecrease'
+        type: string
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ secrets.GCP_REGION }}
+  NAMESPACE: ${{ inputs.namespace }}
+
+jobs:
+  setup-infrastructure:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Install gke-gcloud-auth-plugin
+        run: |
+          gcloud components install gke-gcloud-auth-plugin
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ${{ inputs.cluster_name }} \
+            --region ${{ env.GCP_REGION }} \
+            --project ${{ env.GCP_PROJECT_ID }}
+
+      - name: Create namespace
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create image pull secret for GHCR
+        run: |
+          kubectl create secret docker-registry ghcr-pull-secret \
+            --namespace ${{ env.NAMESPACE }} \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GHCR_PAT }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create application secrets
+        run: |
+          kubectl create secret generic app-secrets \
+            --namespace ${{ env.NAMESPACE }} \
+            --from-literal=DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }} \
+            --from-literal=GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply resource quotas
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ResourceQuota
+          metadata:
+            name: compute-quota
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            hard:
+              requests.cpu: "2"
+              requests.memory: 2Gi
+              limits.cpu: "4"
+              limits.memory: 4Gi
+              pods: "10"
+          EOF
+
+      - name: Apply network policy
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: default-deny-ingress
+            namespace: ${{ env.NAMESPACE }}
+          spec:
+            podSelector: {}
+            policyTypes:
+              - Ingress
+            ingress:
+              - from:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: ${{ env.NAMESPACE }}
+          EOF
+
+      - name: Verify infrastructure
+        run: |
+          echo "--- Namespace ---"
+          kubectl get namespace ${{ env.NAMESPACE }}
+          echo "--- Secrets ---"
+          kubectl get secrets -n ${{ env.NAMESPACE }}
+          echo "--- Resource Quotas ---"
+          kubectl get resourcequota -n ${{ env.NAMESPACE }}
+          echo "--- Network Policies ---"
+          kubectl get networkpolicy -n ${{ env.NAMESPACE }}

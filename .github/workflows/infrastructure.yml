@@ -1,0 +1,20 @@
+name: Infrastructure
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup-infrastructure:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Placeholder
+        run: |
+          echo "TODO: implement k8s infrastructure provisioning"
+          echo "  - authenticate to cloud provider"
+          echo "  - create namespace"
+          echo "  - configure secrets and image pull credentials"
+          echo "  - apply resource quotas and network policies"

@@ -1,0 +1,22 @@
+name: Deploy to Kubernetes
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Placeholder
+        run: |
+          echo "TODO: implement k8s pod deployment"
+          echo "  - authenticate to cloud provider"
+          echo "  - determine image tag from commit SHA"
+          echo "  - apply deployment and service manifests"
+          echo "  - wait for rollout and verify"

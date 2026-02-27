@@ -24,6 +24,19 @@ jobs:
           echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
           chmod 600 ~/.kube/config
 
+      - name: Wait for cluster connectivity
+        run: |
+          for i in {1..10}; do
+            if kubectl cluster-info --request-timeout=5s >/dev/null 2>&1; then
+              echo "Cluster is reachable"
+              exit 0
+            fi
+            echo "Waiting for cluster... ($i/10)"
+            sleep 5
+          done
+          echo "ERROR: Could not reach cluster after 50s"
+          exit 1
+
       - name: Apply namespace
         run: kubectl apply -f k8s/namespace.yaml
 

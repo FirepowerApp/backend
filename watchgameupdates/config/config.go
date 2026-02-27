@@ -22,6 +22,7 @@ type Config struct {
 	ScheduleDate         string
 	GameMaxDurationHours int
 	SchedulerNotify      bool
+	TeamFilter           string
 }
 
 func LoadConfig() *Config {
@@ -52,6 +53,7 @@ func LoadConfig() *Config {
 		}(),
 		ScheduleFile: os.Getenv("SCHEDULE_FILE"),
 		ScheduleDate: os.Getenv("SCHEDULE_DATE"),
+		TeamFilter:   os.Getenv("TEAM_FILTER"),
 		GameMaxDurationHours: func() int {
 			if val, ok := os.LookupEnv("GAME_MAX_DURATION_HOURS"); ok {
 				var intVal int

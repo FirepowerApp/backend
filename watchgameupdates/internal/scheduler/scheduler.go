@@ -25,15 +25,17 @@ type Scheduler struct {
 	queue           TaskEnqueuer
 	gameMaxDuration time.Duration
 	shouldNotify    bool
+	teamFilter      string
 }
 
 // New creates a new Scheduler.
-func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool) *Scheduler {
+func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilter string) *Scheduler {
 	return &Scheduler{
 		fetcher:         fetcher,
 		queue:           q,
 		gameMaxDuration: time.Duration(gameMaxDurationHours) * time.Hour,
 		shouldNotify:    shouldNotify,
+		teamFilter:      teamFilter,
 	}
 }
 
@@ -55,6 +57,12 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 
 	scheduled := 0
 	for _, game := range games {
+		if s.teamFilter != "" && game.HomeTeam.Abbrev != s.teamFilter && game.AwayTeam.Abbrev != s.teamFilter {
+			log.Printf("Skipping game %d (%s vs %s) - neither team matches filter %s",
+				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, s.teamFilter)
+			continue
+		}
+
 		if game.GameState != "FUT" {
 			log.Printf("Skipping game %d (%s vs %s) - state is %s, not FUT",
 				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, game.GameState)

@@ -61,7 +61,7 @@ jobs:
         run: envsubst < k8s/cronjob-scheduler.yaml | kubectl apply -f -
 
       - name: Wait for handler rollout
-        run: kubectl rollout status deployment/handler -n firepower --timeout=120s
+        run: kubectl rollout status deployment/handler -n firepower --timeout=300s
 
       - name: Wait for cloudtasks rollout
-        run: kubectl rollout status deployment/cloudtasks -n firepower --timeout=120s
+        run: kubectl rollout status deployment/cloudtasks -n firepower --timeout=300s

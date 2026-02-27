@@ -61,6 +61,6 @@ jobs:
           kubectl create secret docker-registry ghcr-pull-secret \
             --namespace=firepower \
             --docker-server=ghcr.io \
-            --docker-username=${{ secrets.GHCR_USERNAME }} \
+            --docker-username=${{ github.repository_owner }} \
             --docker-password=${{ secrets.GHCR_TOKEN }} \
             --dry-run=client -o yaml | kubectl apply -f -

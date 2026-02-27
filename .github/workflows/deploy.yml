@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -13,10 +14,41 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Placeholder
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
+          tags: tag:ci
+
+      - name: Configure kubectl
         run: |
-          echo "TODO: implement k8s pod deployment"
-          echo "  - authenticate to cloud provider"
-          echo "  - determine image tag from commit SHA"
-          echo "  - apply deployment and service manifests"
-          echo "  - wait for rollout and verify"
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Compute image tag
+        id: image-tag
+        run: |
+          BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=${BRANCH}-${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Apply handler deployment
+        env:
+          IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+        run: envsubst < k8s/deployment-handler.yaml | kubectl apply -f -
+
+      - name: Apply cloudtasks deployment
+        run: kubectl apply -f k8s/deployment-cloudtasks.yaml
+
+      - name: Apply scheduler cronjob
+        env:
+          IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+        run: envsubst < k8s/cronjob-scheduler.yaml | kubectl apply -f -
+
+      - name: Wait for handler rollout
+        run: kubectl rollout status deployment/handler -n firepower --timeout=120s
+
+      - name: Wait for cloudtasks rollout
+        run: kubectl rollout status deployment/cloudtasks -n firepower --timeout=120s

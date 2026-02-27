@@ -28,11 +28,7 @@ jobs:
         run: kubectl apply -f k8s/namespace.yaml
 
       - name: Apply ConfigMap
-        env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_LOCATION: ${{ secrets.GCP_LOCATION }}
-          CLOUD_TASKS_QUEUE: ${{ secrets.CLOUD_TASKS_QUEUE }}
-        run: envsubst < k8s/configmap.yaml | kubectl apply -f -
+        run: kubectl apply -f k8s/configmap.yaml
 
       - name: Apply backend service
         run: kubectl apply -f k8s/service-backend.yaml

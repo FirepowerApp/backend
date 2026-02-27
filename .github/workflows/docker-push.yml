@@ -70,13 +70,3 @@ jobs:
           labels: ${{ steps.meta-scheduler.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Make packages public
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api --method PATCH /orgs/${{ env.OWNER }}/packages/container/handler \
-            -f visibility=public
-          gh api --method PATCH /orgs/${{ env.OWNER }}/packages/container/scheduler \
-            -f visibility=public

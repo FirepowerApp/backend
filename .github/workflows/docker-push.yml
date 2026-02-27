@@ -73,7 +73,7 @@ jobs:
 
       - name: Make packages public
         env:
-          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh api --method PATCH /orgs/${{ env.OWNER }}/packages/container/handler \
             -f visibility=public

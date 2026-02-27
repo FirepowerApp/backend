@@ -56,11 +56,5 @@ jobs:
             --from-literal=DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Create ghcr-pull-secret
-        run: |
-          kubectl create secret docker-registry ghcr-pull-secret \
-            --namespace=firepower \
-            --docker-server=ghcr.io \
-            --docker-username=${{ github.actor }} \
-            --docker-password=${{ secrets.GHCR_TOKEN }} \
-            --dry-run=client -o yaml | kubectl apply -f -
+      # ghcr-pull-secret is not required: GHCR packages are public
+      # because the source repository (FirepowerApp/backend) is public.

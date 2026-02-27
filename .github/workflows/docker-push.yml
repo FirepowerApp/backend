@@ -71,17 +71,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: List org packages (debug)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "=== Org packages (all visibility) ==="
-          gh api "/orgs/${{ env.OWNER }}/packages?package_type=container&visibility=private" \
-            --jq '.[].name' 2>&1 || true
-          gh api "/orgs/${{ env.OWNER }}/packages?package_type=container&visibility=public" \
-            --jq '.[].name' 2>&1 || true
-
       - name: Make packages public
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -1,4 +1,4 @@
-# CrashTheCrease Backend
+# Firepower Backend
 
 A Go-based backend service for tracking and managing NHL game updates using Google Cloud Tasks.
 

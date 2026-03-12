@@ -35,9 +35,9 @@ func TestDiscordNotifier_FormatMessage(t *testing.T) {
 			awayXG:                 "1.2",
 			homeShootOutGoals:      "0",
 			awayShootOutGoals:      "0",
-			expectedScore:          "CHI 3 - 1 DET",
-			expectedHomeXG:         "CHI: 2.5",
-			expectedAwayXG:         "DET: 1.2",
+			expectedScore:          "CHI 3 (2.5 xG) – DET 1 (1.2 xG)",
+			expectedHomeXG:         "CHI 3 (2.5 xG)",
+			expectedAwayXG:         "DET 1 (1.2 xG)",
 			shouldContainScore:     true,
 			shouldContainXG:        true,
 			shouldContainTimestamp: true,
@@ -52,9 +52,9 @@ func TestDiscordNotifier_FormatMessage(t *testing.T) {
 			awayXG:                 "3.5",
 			homeShootOutGoals:      "0",
 			awayShootOutGoals:      "0",
-			expectedScore:          "CHI 1 - 4 DET",
-			expectedHomeXG:         "CHI: 1.8",
-			expectedAwayXG:         "DET: 3.5",
+			expectedScore:          "CHI 1 (1.8 xG) – DET 4 (3.5 xG)",
+			expectedHomeXG:         "CHI 1 (1.8 xG)",
+			expectedAwayXG:         "DET 4 (3.5 xG)",
 			shouldContainScore:     true,
 			shouldContainXG:        true,
 			shouldContainTimestamp: true,
@@ -69,9 +69,9 @@ func TestDiscordNotifier_FormatMessage(t *testing.T) {
 			awayXG:                 "2.0",
 			homeShootOutGoals:      "", // Missing shootout data
 			awayShootOutGoals:      "",
-			expectedScore:          "CHI 2 - 2 DET",
-			expectedHomeXG:         "CHI: 2.0",
-			expectedAwayXG:         "DET: 2.0",
+			expectedScore:          "CHI 2 (2.0 xG) – DET 2 (2.0 xG)",
+			expectedHomeXG:         "CHI 2 (2.0 xG)",
+			expectedAwayXG:         "DET 2 (2.0 xG)",
 			shouldContainScore:     true,
 			shouldContainXG:        true,
 			shouldContainTimestamp: true,
@@ -86,7 +86,7 @@ func TestDiscordNotifier_FormatMessage(t *testing.T) {
 			awayXG:                 "",
 			homeShootOutGoals:      "0",
 			awayShootOutGoals:      "0",
-			expectedScore:          "CHI 3 - 1 DET",
+			expectedScore:          "CHI 3 – DET 1",
 			expectedHomeXG:         "",
 			expectedAwayXG:         "",
 			shouldContainScore:     true,
@@ -151,7 +151,7 @@ func assertMessageContent(t *testing.T, message string, tc formatMessageTestCase
 		}
 	}
 
-	// Assert expected goals are present and correct
+	// Assert expected goals are present and correct (inline with score)
 	if tc.shouldContainXG {
 		if tc.expectedHomeXG != "" && !strings.Contains(message, tc.expectedHomeXG) {
 			t.Errorf("Expected message to contain home team xG '%s', got: %s", tc.expectedHomeXG, message)
@@ -159,15 +159,12 @@ func assertMessageContent(t *testing.T, message string, tc formatMessageTestCase
 		if tc.expectedAwayXG != "" && !strings.Contains(message, tc.expectedAwayXG) {
 			t.Errorf("Expected message to contain away team xG '%s', got: %s", tc.expectedAwayXG, message)
 		}
-		if !strings.Contains(message, "📊 Expected Goals:") {
-			t.Errorf("Expected message to contain xG header, got: %s", message)
-		}
 	}
 
-	// Assert timestamp is present
+	// Assert timestamp is present (format: *HH:MM TZ*)
 	if tc.shouldContainTimestamp {
-		if !strings.Contains(message, "*Notification sent at") {
-			t.Errorf("Expected message to contain timestamp, got: %s", message)
+		if !strings.HasSuffix(strings.TrimSpace(message), "*") {
+			t.Errorf("Expected message to end with timestamp in *HH:MM TZ* format, got: %s", message)
 		}
 	}
 }

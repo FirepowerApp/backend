@@ -105,31 +105,29 @@ func (d *DiscordNotifier) Close() error {
 	return nil
 }
 
-// formatMessage creates a formatted Discord message from the notification request
+// FormatMessage creates a formatted Discord message from the notification request.
+// The first line contains team names, scores, and xG inline for compact notification previews.
 func (d *DiscordNotifier) FormatMessage(req NotificationRequest) string {
-	message := ""
-
 	homeGoals, hasHomeGoals := req.Data["homeTeamGoals"]
 	awayGoals, hasAwayGoals := req.Data["awayTeamGoals"]
 	homeXG, hasHomeXG := req.Data["homeTeamExpectedGoals"]
 	awayXG, hasAwayXG := req.Data["awayTeamExpectedGoals"]
 
+	var message string
+
 	if hasHomeGoals && hasAwayGoals {
-		message += req.Team1ID + " " + homeGoals + " - " + awayGoals + " " + req.Team2ID + "\n"
-	}
-
-	// Show expected goals if available
-	if hasHomeXG || hasAwayXG {
-		message += "📊 Expected Goals:\n"
+		homeStr := req.Team1ID + " " + homeGoals
 		if hasHomeXG {
-			message += "• " + req.Team1ID + ": " + homeXG + "\n"
+			homeStr += " (" + homeXG + " xG)"
 		}
+		awayStr := req.Team2ID + " " + awayGoals
 		if hasAwayXG {
-			message += "• " + req.Team2ID + ": " + awayXG + "\n"
+			awayStr += " (" + awayXG + " xG)"
 		}
+		message = homeStr + " – " + awayStr + "\n"
 	}
 
-	message += "\n*Notification sent at " + time.Now().Format("15:04:05 MST") + "*"
+	message += "*" + time.Now().Format("15:04 MST") + "*"
 	return message
 }
 

@@ -66,7 +66,7 @@ func TestScheduler_Run_SchedulesFutureGames(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true)
+	s := New(fetcher, q, 5, true, "")
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -131,7 +131,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true)
+	s := New(fetcher, q, 5, true, "")
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -150,7 +150,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 func TestScheduler_Run_NoGames(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: nil}
-	s := New(fetcher, q, 5, true)
+	s := New(fetcher, q, 5, true, "")
 
 	err := s.Run(context.Background(), "2025-07-15")
 	if err != nil {
@@ -178,7 +178,7 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
 	maxHours := 5
-	s := New(fetcher, q, maxHours, false)
+	s := New(fetcher, q, maxHours, false, "")
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -217,7 +217,7 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 func TestScheduler_Run_FetcherError(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{err: fmt.Errorf("NHL API unavailable")}
-	s := New(fetcher, q, 5, true)
+	s := New(fetcher, q, 5, true, "")
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err == nil {
@@ -253,7 +253,7 @@ func TestScheduler_Run_EnqueueErrorContinues(t *testing.T) {
 	// Fail on the first enqueue, succeed on the second
 	q := &mockQueue{failOn: 1}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true)
+	s := New(fetcher, q, 5, true, "")
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -284,7 +284,7 @@ func TestScheduler_Run_InvalidStartTime(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true)
+	s := New(fetcher, q, 5, true, "")
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -311,12 +311,63 @@ func TestScheduler_Run_GameIDConversion(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true)
+	s := New(fetcher, q, 5, true, "")
 
 	s.Run(context.Background(), "2025-10-08")
 
 	// Verify int→string conversion of game ID
 	if q.tasks[0].payload.Game.ID != "2025020999" {
 		t.Errorf("expected game ID string '2025020999', got '%s'", q.tasks[0].payload.Game.ID)
+	}
+}
+
+func TestScheduler_Run_TeamFilter(t *testing.T) {
+	futureTime := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020001,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    "FUT",
+			HomeTeam:     models.Team{Abbrev: "DAL", ID: 25},
+			AwayTeam:     models.Team{Abbrev: "MTL", ID: 8},
+		},
+		{
+			ID:           2025020002,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    "FUT",
+			HomeTeam:     models.Team{Abbrev: "BOS", ID: 6},
+			AwayTeam:     models.Team{Abbrev: "DAL", ID: 25},
+		},
+		{
+			ID:           2025020003,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    "FUT",
+			HomeTeam:     models.Team{Abbrev: "TOR", ID: 10},
+			AwayTeam:     models.Team{Abbrev: "NYR", ID: 3},
+		},
+	}
+
+	q := &mockQueue{}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true, "DAL")
+
+	err := s.Run(context.Background(), "2025-10-08")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only games involving DAL should be scheduled
+	if len(q.tasks) != 2 {
+		t.Fatalf("expected 2 tasks (DAL games only), got %d", len(q.tasks))
+	}
+	for _, task := range q.tasks {
+		home := task.payload.Game.HomeTeam.Abbrev
+		away := task.payload.Game.AwayTeam.Abbrev
+		if home != "DAL" && away != "DAL" {
+			t.Errorf("expected only DAL games, got %s vs %s", away, home)
+		}
 	}
 }

@@ -33,7 +33,7 @@ func main() {
 	date := schedule.ResolveTargetDate(cfg.ScheduleDate)
 
 	// Create and run scheduler
-	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify)
+	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, cfg.TeamFilter)
 	if err := s.Run(ctx, date); err != nil {
 		log.Fatalf("Scheduler failed: %v", err)
 	}

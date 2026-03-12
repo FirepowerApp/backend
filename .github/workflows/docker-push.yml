@@ -1,13 +1,14 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Images
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  OWNER: ${{ github.repository_owner }}
 
 jobs:
   build-and-push:
@@ -30,22 +31,42 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
+      - name: Extract metadata for handler
+        id: meta-handler
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/handler
           tags: |
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push Docker image
+      - name: Build and push handler image
         uses: docker/build-push-action@v5
         with:
           context: ./watchgameupdates
           file: ./watchgameupdates/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-handler.outputs.tags }}
+          labels: ${{ steps.meta-handler.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata for scheduler
+        id: meta-scheduler
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.OWNER }}/scheduler
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push scheduler image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./watchgameupdates
+          file: ./watchgameupdates/Dockerfile.scheduler
+          push: true
+          tags: ${{ steps.meta-scheduler.outputs.tags }}
+          labels: ${{ steps.meta-scheduler.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

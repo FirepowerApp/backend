@@ -22,6 +22,14 @@ type Config struct {
 	RedisAddress  string
 	RedisPassword string
 	RedisDB       int
+
+	// Scheduler-specific
+	ScheduleAPIBaseURL   string
+	ScheduleFile         string
+	ScheduleDate         string
+	GameMaxDurationHours int
+	SchedulerNotify      bool
+	TeamFilter           string
 }
 
 func LoadConfig() *Config {
@@ -60,6 +68,33 @@ func LoadConfig() *Config {
 				fmt.Printf("Invalid MESSAGE_INTERVAL_SECONDS value '%s', using default of 60 seconds\n", val)
 			}
 			return 60 // default value
+		}(),
+		ScheduleAPIBaseURL: func() string {
+			if val := os.Getenv("SCHEDULE_API_BASE_URL"); val != "" {
+				return val
+			}
+			return os.Getenv("PLAYBYPLAY_API_BASE_URL")
+		}(),
+		ScheduleFile: os.Getenv("SCHEDULE_FILE"),
+		ScheduleDate: os.Getenv("SCHEDULE_DATE"),
+		TeamFilter:   os.Getenv("TEAM_FILTER"),
+		GameMaxDurationHours: func() int {
+			if val, ok := os.LookupEnv("GAME_MAX_DURATION_HOURS"); ok {
+				var intVal int
+				_, err := fmt.Sscanf(val, "%d", &intVal)
+				if err == nil && intVal > 0 {
+					return intVal
+				}
+				fmt.Printf("Invalid GAME_MAX_DURATION_HOURS value '%s', using default of 5 hours\n", val)
+			}
+			return 5
+		}(),
+		SchedulerNotify: func() bool {
+			val, ok := os.LookupEnv("SCHEDULER_SHOULD_NOTIFY")
+			if !ok {
+				return true // default to true
+			}
+			return val == "true"
 		}(),
 	}
 }

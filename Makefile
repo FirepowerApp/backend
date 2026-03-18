@@ -1,5 +1,4 @@
 # CrashTheCrease Backend Makefile
-# Replaces functionality from setup-local.sh and run_automated_test.sh
 #
 # Main targets:
 #   make setup          - Initial setup (pull images, install deps)
@@ -15,12 +14,9 @@
 
 .PHONY: help setup home test test-containers clean logs build pull check-deps check-docker check-go pull-with-retry status stop restart clean-all list-containers redis-up redis-stop redis-logs redis-status build-enqueue
 
-# Color output
-BLUE := \033[0;34m
+BLUE  := \033[0;34m
 GREEN := \033[0;32m
-YELLOW := \033[1;33m
-RED := \033[0;31m
-NC := \033[0m # No Color
+NC    := \033[0m
 
 # Docker compose files
 COMPOSE_FILE := docker-compose.yml
@@ -44,43 +40,40 @@ RETRY_DELAYS := 2 4 8 16
 # Default target
 .DEFAULT_GOAL := help
 
-##@ General
+help: ## Show available targets
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(BLUE)%-15s$(NC) %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
-help: ## Display this help message
-	@echo "$(BLUE)CrashTheCrease Backend - Make Commands$(NC)"
-	@echo "========================================"
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make $(YELLOW)<target>$(NC)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(BLUE)%-18s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(GREEN)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+live: ## Start handler and tasks queue with live game data APIs (.env.home)
+	@docker compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started\n"
+	@printf "  Backend:        http://localhost:8080\n"
+	@printf "  Tasks emulator: http://localhost:8123\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
 
-##@ Setup & Prerequisites
+emulator: ## Pull game data emulator from registry and start all components (.env.local)
+	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
+	@docker pull blnelson/firepowermockdataserver:latest
+	@docker compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started\n"
+	@printf "  Backend:            http://localhost:8080\n"
+	@printf "  Tasks emulator:     http://localhost:8123\n"
+	@printf "  Game data emulator: http://localhost:8125 (NHL), http://localhost:8124 (MoneyPuck)\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
 
-check-go: ## Check if Go is installed and version is correct
-	@printf "$(BLUE)[INFO]$(NC) Checking Go installation...\n"
-	@if ! command -v go >/dev/null 2>&1; then \
-		printf "$(RED)[ERROR]$(NC) Go is not installed. Please install Go 1.23.3 or later.\n"; \
-		exit 1; \
-	fi
-	@GO_VERSION=$$(go version | awk '{print $$3}' | sed 's/go//'); \
-	REQUIRED_VERSION="1.23.3"; \
-	if [ "$$(printf '%s\n' "$$REQUIRED_VERSION" "$$GO_VERSION" | sort -V | head -n1)" != "$$REQUIRED_VERSION" ]; then \
-		printf "$(RED)[ERROR]$(NC) Go version $$GO_VERSION is installed, but version $$REQUIRED_VERSION or later is required.\n"; \
-		exit 1; \
-	fi
-	@printf "$(GREEN)[SUCCESS]$(NC) Go version $$(go version | awk '{print $$3}') is compatible\n"
+stop: ## Stop all running containers
+	@docker compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml down 2>/dev/null || true
+	@printf "$(GREEN)[OK]$(NC) Containers stopped\n"
 
-check-docker: ## Check if Docker is installed and running
-	@printf "$(BLUE)[INFO]$(NC) Checking Docker installation...\n"
-	@if ! command -v docker >/dev/null 2>&1; then \
-		printf "$(RED)[ERROR]$(NC) Docker is not installed. Please install Docker from https://docs.docker.com/get-docker/\n"; \
-		exit 1; \
-	fi
-	@if ! docker info >/dev/null 2>&1; then \
-		printf "$(RED)[ERROR]$(NC) Docker is installed but not running. Please start Docker.\n"; \
-		exit 1; \
-	fi
-	@printf "$(GREEN)[SUCCESS]$(NC) Docker is installed and running\n"
+logs: ## Follow logs from running containers
+	@docker compose logs -f
 
-check-deps: check-go check-docker ## Check all prerequisites (Go and Docker)
-	@printf "$(GREEN)[SUCCESS]$(NC) All prerequisites are met\n"
+schedule: ## Start full system and run scheduler with live NHL data
+	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (live data)...\n"
+	@docker compose -f docker-compose.yml -f docker-compose.live.yml --profile scheduler up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with scheduler\n"
+	@printf "  Backend:        http://localhost:8080\n"
+	@printf "  Tasks emulator: http://localhost:8123\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
 
 ##@ Image Management
 

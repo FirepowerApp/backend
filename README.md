@@ -1,4 +1,4 @@
-# CrashTheCrease Backend
+# Firepower Backend
 
 A Go-based backend service for tracking and managing NHL game updates. Supports two task queue backends: **Google Cloud Tasks** (HTTP mode) and **Redis via Asynq** (worker mode), selectable at runtime with a `--mode` flag.
 

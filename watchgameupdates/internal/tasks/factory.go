@@ -12,7 +12,7 @@ import (
 )
 
 func NewCloudTasksClient(ctx context.Context, cfg *config.Config) (CloudTasksClient, error) {
-	if cfg.Env == "local" && cfg.CloudTasksAddress != "" {
+	if cfg.UseEmulator && cfg.CloudTasksAddress != "" {
 		log.Printf("Using local Cloud Tasks emulator at %s", cfg.CloudTasksAddress)
 		// Connect to emulator using plaintext (no TLS)
 		conn, err := grpc.Dial(

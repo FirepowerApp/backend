@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudtasks
+  namespace: firepower
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudtasks
+  template:
+    metadata:
+      labels:
+        app: cloudtasks
+    spec:
+      containers:
+        - name: cloudtasks
+          image: ghcr.io/aertje/cloud-tasks-emulator:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8123
+          args:
+            - --host=0.0.0.0
+            - -queue
+            - projects/localproject/locations/us-south1/queues/gameschedule

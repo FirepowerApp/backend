@@ -66,7 +66,7 @@ func TestScheduler_Run_SchedulesFutureGames(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", nil)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -131,7 +131,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", nil)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -150,7 +150,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 func TestScheduler_Run_NoGames(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: nil}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", nil)
 
 	err := s.Run(context.Background(), "2025-07-15")
 	if err != nil {
@@ -178,7 +178,7 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
 	maxHours := 5
-	s := New(fetcher, q, maxHours, false, "")
+	s := New(fetcher, q, maxHours, false, "", nil)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -217,7 +217,7 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 func TestScheduler_Run_FetcherError(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{err: fmt.Errorf("NHL API unavailable")}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", nil)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err == nil {
@@ -253,7 +253,7 @@ func TestScheduler_Run_EnqueueErrorContinues(t *testing.T) {
 	// Fail on the first enqueue, succeed on the second
 	q := &mockQueue{failOn: 1}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", nil)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -284,7 +284,7 @@ func TestScheduler_Run_InvalidStartTime(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", nil)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -311,7 +311,7 @@ func TestScheduler_Run_GameIDConversion(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", nil)
 
 	s.Run(context.Background(), "2025-10-08")
 
@@ -352,7 +352,7 @@ func TestScheduler_Run_TeamFilter(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "DAL")
+	s := New(fetcher, q, 5, true, "DAL", nil)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {

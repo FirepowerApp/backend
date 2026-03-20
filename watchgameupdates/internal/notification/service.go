@@ -3,6 +3,7 @@ package notification
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	. "watchgameupdates/internal/models"
@@ -130,6 +131,47 @@ func (s *Service) sendToNotifier(notifier Notifier, req NotificationRequest, ind
 	case <-ctx.Done():
 		log.Printf("Notifier %d notification timed out", index)
 	}
+}
+
+// SendMessage sends a plain-text message to all configured notifiers and waits for completion.
+func (s *Service) SendMessage(ctx context.Context, message string) {
+	if !s.shouldNotify {
+		log.Printf("Notifications disabled for this service instance, skipping message")
+		return
+	}
+
+	if len(s.notifiers) == 0 {
+		log.Printf("No notifiers configured, skipping notification")
+		return
+	}
+
+	var wg sync.WaitGroup
+	for i, notifier := range s.notifiers {
+		wg.Add(1)
+		go func(n Notifier, idx int) {
+			defer wg.Done()
+			notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+
+			resultChan, err := n.SendNotification(notifCtx, message)
+			if err != nil {
+				log.Printf("Notifier %d failed to send message: %v", idx, err)
+				return
+			}
+
+			select {
+			case result := <-resultChan:
+				if !result.Success {
+					log.Printf("Notifier %d message failed: %v", idx, result.Error)
+				} else {
+					log.Printf("Notifier %d message sent successfully: %s", idx, result.ID)
+				}
+			case <-notifCtx.Done():
+				log.Printf("Notifier %d message timed out", idx)
+			}
+		}(notifier, i)
+	}
+	wg.Wait()
 }
 
 // Gracefully shuts down the service

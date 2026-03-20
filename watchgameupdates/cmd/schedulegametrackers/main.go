@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"watchgameupdates/config"
+	"watchgameupdates/internal/notification"
 	"watchgameupdates/internal/queue"
 	"watchgameupdates/internal/schedule"
 	"watchgameupdates/internal/scheduler"
@@ -32,8 +33,12 @@ func main() {
 	// Resolve target date
 	date := schedule.ResolveTargetDate(cfg.ScheduleDate)
 
+	// Create notification service for scheduler completion summary
+	notifService := notification.NewServiceWithNotificationFlag(cfg.SchedulerNotify)
+	defer notifService.Close()
+
 	// Create and run scheduler
-	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, cfg.TeamFilter)
+	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, cfg.TeamFilter, notifService)
 	if err := s.Run(ctx, date); err != nil {
 		log.Fatalf("Scheduler failed: %v", err)
 	}

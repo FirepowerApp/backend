@@ -26,16 +26,20 @@ type Scheduler struct {
 	gameMaxDuration time.Duration
 	shouldNotify    bool
 	teamFilter      string
+	immediateStart  bool
 }
 
 // New creates a new Scheduler.
-func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilter string) *Scheduler {
+// When immediateStart is true (e.g. local file-based testing), the scheduler
+// ignores startTimeUTC from game data and delivers each task one minute from now.
+func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilter string, immediateStart bool) *Scheduler {
 	return &Scheduler{
 		fetcher:         fetcher,
 		queue:           q,
 		gameMaxDuration: time.Duration(gameMaxDurationHours) * time.Hour,
 		shouldNotify:    shouldNotify,
 		teamFilter:      teamFilter,
+		immediateStart:  immediateStart,
 	}
 }
 
@@ -75,7 +79,14 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			continue
 		}
 
-		executionEnd := startTime.Add(s.gameMaxDuration).Format(time.RFC3339)
+		deliverAt := startTime
+		if s.immediateStart {
+			deliverAt = time.Now().Add(1 * time.Minute)
+			log.Printf("Immediate start mode: scheduling game %d for %s (ignoring startTimeUTC %s)",
+				game.ID, deliverAt.Format(time.RFC3339), game.StartTimeUTC)
+		}
+
+		executionEnd := deliverAt.Add(s.gameMaxDuration).Format(time.RFC3339)
 
 		payload := models.Payload{
 			Game: models.Game{
@@ -89,7 +100,7 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			ShouldNotify: &s.shouldNotify,
 		}
 
-		if err := s.queue.Enqueue(ctx, payload, startTime); err != nil {
+		if err := s.queue.Enqueue(ctx, payload, deliverAt); err != nil {
 			log.Printf("Failed to enqueue task for game %d: %v", game.ID, err)
 			continue
 		}

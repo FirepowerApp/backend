@@ -66,7 +66,7 @@ func TestScheduler_Run_SchedulesFutureGames(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -131,7 +131,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -150,7 +150,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 func TestScheduler_Run_NoGames(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: nil}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", false)
 
 	err := s.Run(context.Background(), "2025-07-15")
 	if err != nil {
@@ -178,7 +178,7 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
 	maxHours := 5
-	s := New(fetcher, q, maxHours, false, "")
+	s := New(fetcher, q, maxHours, false, "", false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -217,7 +217,7 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 func TestScheduler_Run_FetcherError(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{err: fmt.Errorf("NHL API unavailable")}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err == nil {
@@ -253,7 +253,7 @@ func TestScheduler_Run_EnqueueErrorContinues(t *testing.T) {
 	// Fail on the first enqueue, succeed on the second
 	q := &mockQueue{failOn: 1}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -284,7 +284,7 @@ func TestScheduler_Run_InvalidStartTime(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -311,13 +311,52 @@ func TestScheduler_Run_GameIDConversion(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "")
+	s := New(fetcher, q, 5, true, "", false)
 
 	s.Run(context.Background(), "2025-10-08")
 
 	// Verify int→string conversion of game ID
 	if q.tasks[0].payload.Game.ID != "2025020999" {
 		t.Errorf("expected game ID string '2025020999', got '%s'", q.tasks[0].payload.Game.ID)
+	}
+}
+
+func TestScheduler_Run_ImmediateStart(t *testing.T) {
+	// StartTimeUTC is far in the past — immediate start mode should ignore it
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020001,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: "2025-10-08T23:00:00Z",
+			GameState:    "FUT",
+			HomeTeam:     models.Team{Abbrev: "TOR", ID: 10},
+			AwayTeam:     models.Team{Abbrev: "MTL", ID: 8},
+		},
+	}
+
+	before := time.Now().Add(1 * time.Minute)
+	q := &mockQueue{}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true, "", true)
+
+	err := s.Run(context.Background(), "2025-10-08")
+	after := time.Now().Add(1 * time.Minute)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(q.tasks))
+	}
+
+	deliverAt := q.tasks[0].deliverAt
+	if deliverAt.Before(before) || deliverAt.After(after) {
+		t.Errorf("expected deliverAt ~1 minute from now, got %v", deliverAt)
+	}
+
+	// StartTime in payload should still reflect the original game data
+	if q.tasks[0].payload.Game.StartTime != "2025-10-08T23:00:00Z" {
+		t.Errorf("expected StartTime to be original game StartTimeUTC, got %s", q.tasks[0].payload.Game.StartTime)
 	}
 }
 
@@ -352,7 +391,7 @@ func TestScheduler_Run_TeamFilter(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "DAL")
+	s := New(fetcher, q, 5, true, "DAL", false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {

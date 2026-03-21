@@ -59,6 +59,21 @@ func WatchGameUpdatesHandler(
 		requiredKeys := notificationService.GetAllRequiredDataKeys()
 
 		gameData, err := fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
+
+		// Populate game state (period/time) from play-by-play data
+		if lastPlay.TypeDescKey == "game-end" {
+			gameData["gameState"] = "Final"
+		} else if lastPlay.TimeRemaining != "" {
+			switch lastPlay.PeriodDescriptor.PeriodType {
+			case "OT":
+				gameData["gameState"] = fmt.Sprintf("OT, %s remaining", lastPlay.TimeRemaining)
+			case "SO":
+				gameData["gameState"] = "Shootout"
+			default:
+				gameData["gameState"] = fmt.Sprintf("Period %d, %s remaining", lastPlay.Period, lastPlay.TimeRemaining)
+			}
+		}
+
 		if lastPlay.TypeDescKey == "game-end" {
 			homeGoals, homeGOK := gameData["homeTeamGoals"]
 			awayGoals, awayGOK := gameData["awayTeamGoals"]

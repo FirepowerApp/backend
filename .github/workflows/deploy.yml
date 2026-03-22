@@ -56,6 +56,46 @@ jobs:
           fi
           echo "tag=${BRANCH}-${SHA}" >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify images are available in registry
+        env:
+          IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          HANDLER_IMAGE="ghcr.io/${OWNER}/handler:${IMAGE_TAG}"
+          SCHEDULER_IMAGE="ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
+          TIMEOUT=300
+          INTERVAL=10
+          ELAPSED=0
+
+          wait_for_image() {
+            local image="$1"
+            echo "Waiting for image: ${image}"
+            while true; do
+              if docker manifest inspect "${image}" >/dev/null 2>&1; then
+                echo "Image available: ${image}"
+                return 0
+              fi
+              if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
+                echo "ERROR: Timed out after ${TIMEOUT}s waiting for ${image}"
+                return 1
+              fi
+              echo "Not available yet (${ELAPSED}s elapsed), retrying in ${INTERVAL}s..."
+              sleep "${INTERVAL}"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+          }
+
+          wait_for_image "${HANDLER_IMAGE}"
+          wait_for_image "${SCHEDULER_IMAGE}"
+          echo "Both images verified in registry"
+
       - name: Apply handler deployment
         env:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
@@ -74,3 +114,18 @@ jobs:
 
       - name: Wait for cloudtasks rollout
         run: kubectl rollout status deployment/cloudtasks -n firepower --timeout=300s
+
+      - name: Verify scheduler cronjob updated
+        env:
+          IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          EXPECTED="ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
+          ACTUAL=$(kubectl get cronjob scheduler -n firepower -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}')
+          echo "Expected image: ${EXPECTED}"
+          echo "Actual image:   ${ACTUAL}"
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "ERROR: Scheduler CronJob image does not match expected"
+            exit 1
+          fi
+          echo "Scheduler CronJob updated successfully"

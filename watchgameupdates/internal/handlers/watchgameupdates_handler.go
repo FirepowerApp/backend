@@ -66,11 +66,16 @@ func WatchGameUpdatesHandler(
 		} else if lastPlay.TimeRemaining != "" {
 			switch lastPlay.PeriodDescriptor.PeriodType {
 			case "OT":
-				gameData["gameState"] = fmt.Sprintf("OT, %s remaining", lastPlay.TimeRemaining)
+				gameData["gameState"] = fmt.Sprintf("%s left, OT", lastPlay.TimeRemaining)
 			case "SO":
 				gameData["gameState"] = "Shootout"
 			default:
-				gameData["gameState"] = fmt.Sprintf("Period %d, %s remaining", lastPlay.Period, lastPlay.TimeRemaining)
+				periodSuffix := map[int]string{1: "1st", 2: "2nd", 3: "3rd"}
+				suffix, ok := periodSuffix[lastPlay.Period]
+				if !ok {
+					suffix = fmt.Sprintf("%dth", lastPlay.Period)
+				}
+				gameData["gameState"] = fmt.Sprintf("%s left, %s period", lastPlay.TimeRemaining, suffix)
 			}
 		}
 

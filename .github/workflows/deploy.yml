@@ -68,10 +68,32 @@ jobs:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "Verifying handler image: ghcr.io/${OWNER}/handler:${IMAGE_TAG}"
-          docker manifest inspect "ghcr.io/${OWNER}/handler:${IMAGE_TAG}"
-          echo "Verifying scheduler image: ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
-          docker manifest inspect "ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
+          HANDLER_IMAGE="ghcr.io/${OWNER}/handler:${IMAGE_TAG}"
+          SCHEDULER_IMAGE="ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
+          TIMEOUT=300
+          INTERVAL=10
+          ELAPSED=0
+
+          wait_for_image() {
+            local image="$1"
+            echo "Waiting for image: ${image}"
+            while true; do
+              if docker manifest inspect "${image}" >/dev/null 2>&1; then
+                echo "Image available: ${image}"
+                return 0
+              fi
+              if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
+                echo "ERROR: Timed out after ${TIMEOUT}s waiting for ${image}"
+                return 1
+              fi
+              echo "Not available yet (${ELAPSED}s elapsed), retrying in ${INTERVAL}s..."
+              sleep "${INTERVAL}"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+          }
+
+          wait_for_image "${HANDLER_IMAGE}"
+          wait_for_image "${SCHEDULER_IMAGE}"
           echo "Both images verified in registry"
 
       - name: Apply handler deployment

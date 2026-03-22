@@ -159,9 +159,6 @@ func assertMessageContent(t *testing.T, message string, tc formatMessageTestCase
 		if tc.expectedAwayXG != "" && !strings.Contains(message, tc.expectedAwayXG) {
 			t.Errorf("Expected message to contain away team xG '%s', got: %s", tc.expectedAwayXG, message)
 		}
-		if !strings.Contains(message, "📊 Expected Goals:") {
-			t.Errorf("Expected message to contain xG header, got: %s", message)
-		}
 	}
 
 	// Assert timestamp is present

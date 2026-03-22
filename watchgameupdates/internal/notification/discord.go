@@ -113,20 +113,20 @@ func (d *DiscordNotifier) FormatMessage(req NotificationRequest) string {
 	awayGoals, hasAwayGoals := req.Data["awayTeamGoals"]
 	homeXG, hasHomeXG := req.Data["homeTeamExpectedGoals"]
 	awayXG, hasAwayXG := req.Data["awayTeamExpectedGoals"]
+	gameState, hasGameState := req.Data["gameState"]
 
 	if hasHomeGoals && hasAwayGoals {
 		message += req.Team1ID + " " + homeGoals + " - " + awayGoals + " " + req.Team2ID + "\n"
 	}
 
-	// Show expected goals if available
-	if hasHomeXG || hasAwayXG {
-		message += "📊 Expected Goals:\n"
-		if hasHomeXG {
-			message += "• " + req.Team1ID + ": " + homeXG + "\n"
-		}
-		if hasAwayXG {
-			message += "• " + req.Team2ID + ": " + awayXG + "\n"
-		}
+	if hasGameState {
+		message += "• " + gameState + "\n"
+	}
+	if hasHomeXG {
+		message += "• " + req.Team1ID + ": " + homeXG + " xG\n"
+	}
+	if hasAwayXG {
+		message += "• " + req.Team2ID + ": " + awayXG + " xG\n"
 	}
 
 	message += "\n*Notification sent at " + time.Now().Format("15:04:05 MST") + "*"

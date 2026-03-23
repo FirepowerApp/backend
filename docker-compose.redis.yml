@@ -37,6 +37,7 @@ services:
   asynqmon:
     <<: *common-settings
     image: hibiken/asynqmon:latest
+    platform: linux/amd64
     ports:
       - "8980:8080"
     environment:

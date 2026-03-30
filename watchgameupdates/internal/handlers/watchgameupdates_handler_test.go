@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"testing"
+
+	"watchgameupdates/internal/models"
 )
 
 type adjustScoreTestCase struct {
@@ -200,4 +202,132 @@ func buildGameData(tc adjustScoreTestCase) map[string]string {
 	}
 
 	return data
+}
+
+func TestFormatGameState(t *testing.T) {
+	testCases := []struct {
+		name     string
+		play     models.Play
+		expected string
+	}{
+		{
+			name: "GameEnd_ReturnsFinal",
+			play: models.Play{
+				TypeDescKey:   "game-end",
+				TimeRemaining: "00:00",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     3,
+					PeriodType: "REG",
+				},
+			},
+			expected: "Final",
+		},
+		{
+			name: "FirstPeriod_ReturnsCorrectSuffix",
+			play: models.Play{
+				TypeDescKey:   "shot-on-goal",
+				TimeRemaining: "15:32",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     1,
+					PeriodType: "REG",
+				},
+			},
+			expected: "15:32 left, 1st period",
+		},
+		{
+			name: "SecondPeriod_ReturnsCorrectSuffix",
+			play: models.Play{
+				TypeDescKey:   "goal",
+				TimeRemaining: "06:56",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     2,
+					PeriodType: "REG",
+				},
+			},
+			expected: "06:56 left, 2nd period",
+		},
+		{
+			name: "ThirdPeriod_ReturnsCorrectSuffix",
+			play: models.Play{
+				TypeDescKey:   "missed-shot",
+				TimeRemaining: "01:45",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     3,
+					PeriodType: "REG",
+				},
+			},
+			expected: "01:45 left, 3rd period",
+		},
+		{
+			name: "FourthPeriod_ReturnsFallbackSuffix",
+			play: models.Play{
+				TypeDescKey:   "blocked-shot",
+				TimeRemaining: "10:00",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     4,
+					PeriodType: "REG",
+				},
+			},
+			expected: "10:00 left, 4th period",
+		},
+		{
+			name: "Overtime_ReturnsOTFormat",
+			play: models.Play{
+				TypeDescKey:   "shot-on-goal",
+				TimeRemaining: "03:22",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     4,
+					PeriodType: "OT",
+				},
+			},
+			expected: "03:22 left, OT",
+		},
+		{
+			name: "Shootout_ReturnsShootout",
+			play: models.Play{
+				TypeDescKey:   "goal",
+				TimeRemaining: "00:00",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     5,
+					PeriodType: "SO",
+				},
+			},
+			expected: "Shootout",
+		},
+		{
+			name: "EmptyTimeRemaining_ReturnsEmptyString",
+			play: models.Play{
+				TypeDescKey:   "period-start",
+				TimeRemaining: "",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     1,
+					PeriodType: "REG",
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "PeriodDescriptorNumber_UsedInsteadOfPeriodField",
+			play: models.Play{
+				TypeDescKey:   "shot-on-goal",
+				TimeRemaining: "12:00",
+				Period:        0, // This field is not populated by NHL API
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number:     2, // This is what the NHL API populates
+					PeriodType: "REG",
+				},
+			},
+			expected: "12:00 left, 2nd period",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatGameState(tc.play)
+
+			if result != tc.expected {
+				t.Errorf("Expected '%s', got '%s'", tc.expected, result)
+			}
+		})
+	}
 }

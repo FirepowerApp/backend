@@ -61,23 +61,7 @@ func WatchGameUpdatesHandler(
 		gameData, err := fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
 
 		// Populate game state (period/time) from play-by-play data
-		if lastPlay.TypeDescKey == "game-end" {
-			gameData["gameState"] = "Final"
-		} else if lastPlay.TimeRemaining != "" {
-			switch lastPlay.PeriodDescriptor.PeriodType {
-			case "OT":
-				gameData["gameState"] = fmt.Sprintf("%s left, OT", lastPlay.TimeRemaining)
-			case "SO":
-				gameData["gameState"] = "Shootout"
-			default:
-				periodSuffix := map[int]string{1: "1st", 2: "2nd", 3: "3rd"}
-				suffix, ok := periodSuffix[lastPlay.Period]
-				if !ok {
-					suffix = fmt.Sprintf("%dth", lastPlay.Period)
-				}
-				gameData["gameState"] = fmt.Sprintf("%s left, %s period", lastPlay.TimeRemaining, suffix)
-			}
-		}
+		gameData["gameState"] = formatGameState(lastPlay)
 
 		if lastPlay.TypeDescKey == "game-end" {
 			homeGoals, homeGOK := gameData["homeTeamGoals"]
@@ -223,4 +207,31 @@ func scheduleNextCheck(payload models.Payload) error {
 
 	log.Printf("Successfully scheduled next check task for game %s at %v", payload.Game.ID, scheduleTime.AsTime().Format(time.RFC3339))
 	return nil
+}
+
+// formatGameState returns a formatted game state string based on the play data.
+// Returns "Final" for game-end, "Shootout" for SO, "X:XX left, OT" for overtime,
+// or "X:XX left, Nth period" for regular periods.
+func formatGameState(play models.Play) string {
+	if play.TypeDescKey == "game-end" {
+		return "Final"
+	}
+
+	if play.TimeRemaining == "" {
+		return ""
+	}
+
+	switch play.PeriodDescriptor.PeriodType {
+	case "OT":
+		return fmt.Sprintf("%s left, OT", play.TimeRemaining)
+	case "SO":
+		return "Shootout"
+	default:
+		periodSuffix := map[int]string{1: "1st", 2: "2nd", 3: "3rd"}
+		suffix, ok := periodSuffix[play.PeriodDescriptor.Number]
+		if !ok {
+			suffix = fmt.Sprintf("%dth", play.PeriodDescriptor.Number)
+		}
+		return fmt.Sprintf("%s left, %s period", play.TimeRemaining, suffix)
+	}
 }

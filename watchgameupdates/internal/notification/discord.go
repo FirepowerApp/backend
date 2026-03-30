@@ -40,6 +40,7 @@ func NewDiscordNotifier(config NotifierConfig) (*DiscordNotifier, error) {
 		"awayTeamGoals",
 		"homeTeamShootOutGoals",
 		"awayTeamShootOutGoals",
+		"gameState",
 	}
 
 	return &DiscordNotifier{

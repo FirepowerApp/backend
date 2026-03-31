@@ -66,7 +66,7 @@ schedule-test-podman: ## Start full system and run scheduler with test data usin
 	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
 	@podman pull blnelson/firepowermockdataserver:latest
 	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (test data)...\n"
-	@podman compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
+	@podman-compose -f docker-compose.yml -f docker-compose.emulator.yml -f docker-compose.podman.yml up --build -d
 	@printf "$(GREEN)[OK]$(NC) Started with scheduler (test data)\n"
 	@printf "  Backend:            http://localhost:8080\n"
 	@printf "  Tasks emulator:     http://localhost:8123\n"

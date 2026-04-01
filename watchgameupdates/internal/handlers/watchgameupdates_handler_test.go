@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"testing"
+	"time"
 
+	"watchgameupdates/config"
 	"watchgameupdates/internal/models"
 )
 
@@ -327,6 +329,81 @@ func TestFormatGameState(t *testing.T) {
 
 			if result != tc.expected {
 				t.Errorf("Expected '%s', got '%s'", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestPeriodEndInterval(t *testing.T) {
+	cfg := &config.Config{
+		MessageIntervalSeconds:   60,
+		PeriodEndIntervalSeconds: 1200,
+	}
+	maxPeriods := 5
+
+	testCases := []struct {
+		name       string
+		period     int
+		maxPeriods *int
+		expected   time.Duration
+	}{
+		{
+			name:       "RegularSeason_Period1_ReturnsExtendedInterval",
+			period:     1,
+			maxPeriods: &maxPeriods,
+			expected:   1200 * time.Second,
+		},
+		{
+			name:       "RegularSeason_Period2_ReturnsExtendedInterval",
+			period:     2,
+			maxPeriods: &maxPeriods,
+			expected:   1200 * time.Second,
+		},
+		{
+			name:       "RegularSeason_Period3_ReturnsStandardInterval",
+			period:     3,
+			maxPeriods: &maxPeriods,
+			expected:   60 * time.Second,
+		},
+		{
+			name:       "Playoffs_Period1_ReturnsExtendedInterval",
+			period:     1,
+			maxPeriods: nil,
+			expected:   1200 * time.Second,
+		},
+		{
+			name:       "Playoffs_Period2_ReturnsExtendedInterval",
+			period:     2,
+			maxPeriods: nil,
+			expected:   1200 * time.Second,
+		},
+		{
+			name:       "Playoffs_Period3_ReturnsExtendedInterval",
+			period:     3,
+			maxPeriods: nil,
+			expected:   1200 * time.Second,
+		},
+		{
+			name:       "Playoffs_OTPeriod4_ReturnsExtendedInterval",
+			period:     4,
+			maxPeriods: nil,
+			expected:   1200 * time.Second,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			play := models.Play{
+				TypeDescKey: "period-end",
+				PeriodDescriptor: models.PeriodDescriptor{
+					Number: tc.period,
+				},
+			}
+
+			result := periodEndInterval(play, tc.maxPeriods, cfg)
+
+			if result != tc.expected {
+				t.Errorf("Expected %v, got %v", tc.expected, result)
 			}
 		})
 	}

@@ -50,8 +50,9 @@ func WatchGameUpdatesHandler(
 		"shot-on-goal": {},
 		"goal":         {},
 		"game-end":     {},
+		"period-end":   {},
 	}
-	lastPlay := services.FetchPlayByPlay(payload.Game.ID)
+	lastPlay, maxPeriods := services.FetchPlayByPlay(payload.Game.ID)
 
 	if _, ok := recomputeTypes[lastPlay.TypeDescKey]; ok {
 		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlay.TypeDescKey, payload.Game.ID)
@@ -85,7 +86,12 @@ func WatchGameUpdatesHandler(
 	log.Printf("Last play type: %s, Should reschedule: %v\n", lastPlay.TypeDescKey, shouldReschedule)
 
 	if shouldReschedule {
-		if err := scheduleNextCheck(payload); err != nil {
+		cfg := config.LoadConfig()
+		interval := time.Duration(cfg.MessageIntervalSeconds) * time.Second
+		if lastPlay.TypeDescKey == "period-end" {
+			interval = periodEndInterval(lastPlay, maxPeriods, cfg)
+		}
+		if err := scheduleNextCheck(payload, interval); err != nil {
 			log.Printf("Failed to schedule next check: %v", err)
 			http.Error(w, "Failed to schedule next check", http.StatusInternalServerError)
 			return
@@ -146,7 +152,7 @@ func shouldSkipExecution(payload models.Payload) (bool, error) {
 }
 
 // scheduleNextCheck creates a Cloud Task to reschedule the next game check
-func scheduleNextCheck(payload models.Payload) error {
+func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 	cfg := config.LoadConfig()
 
 	tasksCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -158,8 +164,7 @@ func scheduleNextCheck(payload models.Payload) error {
 	}
 	defer tasksClient.Close()
 
-	messageInterval := time.Duration(cfg.MessageIntervalSeconds) * time.Second
-	scheduleTime := timestamppb.New(time.Now().Add(messageInterval))
+	scheduleTime := timestamppb.New(time.Now().Add(interval))
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -207,6 +212,18 @@ func scheduleNextCheck(payload models.Payload) error {
 
 	log.Printf("Successfully scheduled next check task for game %s at %v", payload.Game.ID, scheduleTime.AsTime().Format(time.RFC3339))
 	return nil
+}
+
+// periodEndInterval returns the reschedule interval for a period-end event.
+// Regular season (maxPeriods != nil): periods 1-2 get the extended interval,
+// period 3 gets the standard interval since OT or game-end is imminent.
+// Playoffs (maxPeriods == nil): all periods get the extended interval.
+func periodEndInterval(play models.Play, maxPeriods *int, cfg *config.Config) time.Duration {
+	isRegularSeason := maxPeriods != nil
+	if isRegularSeason && play.PeriodDescriptor.Number == 3 {
+		return time.Duration(cfg.MessageIntervalSeconds) * time.Second
+	}
+	return time.Duration(cfg.PeriodEndIntervalSeconds) * time.Second
 }
 
 // formatGameState returns a formatted game state string based on the play data.

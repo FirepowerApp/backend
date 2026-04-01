@@ -14,7 +14,8 @@ type Config struct {
 	UseEmulator            bool
 	CloudTasksAddress      string
 	HandlerAddress         string
-	MessageIntervalSeconds int
+	MessageIntervalSeconds   int
+	PeriodEndIntervalSeconds int
 
 	// Scheduler-specific
 	ScheduleAPIBaseURL   string
@@ -44,6 +45,17 @@ func LoadConfig() *Config {
 				fmt.Printf("Invalid MESSAGE_INTERVAL_SECONDS value '%s', using default of 60 seconds\n", val)
 			}
 			return 60 // default value
+		}(),
+		PeriodEndIntervalSeconds: func() int {
+			if val, ok := os.LookupEnv("PERIOD_END_INTERVAL_SECONDS"); ok {
+				var intVal int
+				_, err := fmt.Sscanf(val, "%d", &intVal)
+				if err == nil && intVal > 0 {
+					return intVal
+				}
+				fmt.Printf("Invalid PERIOD_END_INTERVAL_SECONDS value '%s', using default of 1200 seconds\n", val)
+			}
+			return 1200 // default: 20 minutes
 		}(),
 		ScheduleAPIBaseURL: func() string {
 			if val := os.Getenv("SCHEDULE_API_BASE_URL"); val != "" {

@@ -105,21 +105,32 @@ Configuration: `watchgameupdates/.env.local`
 
 **Using a Locally Built Mock API:**
 
-If you're developing changes to the mock data server, you can use a locally built image instead of pulling from the registry:
+If you're developing changes to the gameDataEmulator alongside backend changes, build the emulator image locally from your branch and start the stack directly — bypassing the `docker pull` that `make emulator` and `make schedule-test` run first.
 
 ```bash
-# First, build your local mock API image
-cd /path/to/your/mockdataserver
-docker build -t mockdataapi:latest .
+# 1. Build the emulator image from your local branch
+cd ../gameDataEmulator
+git checkout your-branch
+docker build -t blnelson/firepowermockdataserver:latest .
 
-# Then run test containers with the local image
-make test-containers LOCAL_MOCK=true
-
-# Or run full automated tests with the local image
-make test LOCAL_MOCK=true
+# 2. Start the backend + mock API stack (no pull step)
+cd ../backend
+docker compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
 ```
 
-The `LOCAL_MOCK=true` flag tells the system to use your locally built `mockdataapi:latest` image instead of pulling `blnelson/firepowermockdataserver:latest` from the registry. This is useful for testing changes to the mock API without needing to push to a registry.
+To also run the full end-to-end sequence with the scheduler (which seeds the queue and triggers notifications):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
+```
+
+This is equivalent to `make schedule-test` but uses your locally built emulator image instead of pulling the latest from the registry. Services will be available at:
+- Backend: http://localhost:8080
+- Cloud Tasks emulator: http://localhost:8123
+- Mock NHL API: http://localhost:8125
+- Mock MoneyPuck API: http://localhost:8124
+
+The reason only the emulator needs a separate build step is that the backend is always built from local source by Docker Compose (via the `build:` directive in `docker-compose.yml`), so it automatically reflects any local changes. The emulator, by contrast, is referenced as a pre-built image (`image: blnelson/firepowermockdataserver:latest`), so Compose just uses whatever is cached locally under that tag. The difference between this approach and `make schedule-test` is that the Makefile target runs `docker pull blnelson/firepowermockdataserver:latest` before starting the stack, which would overwrite your locally built image with the latest version from the registry. By invoking `docker compose` directly and skipping that pull, Docker uses the local image you built from your branch instead.
 
 ### Configuration
 

@@ -1,0 +1,6 @@
+# Podman override: removes profile constraints unsupported by podman-compose
+# Used by: make schedule-test-podman
+
+services:
+  scheduler:
+    profiles: []

@@ -8,7 +8,7 @@
 #   make schedule  - Start full system and run scheduler with live NHL data
 #   make schedule-test - Start full system and run scheduler with test data
 
-.PHONY: help live emulator stop logs schedule schedule-test
+.PHONY: help live emulator stop logs schedule schedule-test schedule-test-podman
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -56,6 +56,17 @@ schedule-test: ## Start full system and run scheduler with test data
 	@docker pull blnelson/firepowermockdataserver:latest
 	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (test data)...\n"
 	@docker compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with scheduler (test data)\n"
+	@printf "  Backend:            http://localhost:8080\n"
+	@printf "  Tasks emulator:     http://localhost:8123\n"
+	@printf "  Game data emulator: http://localhost:8125 (NHL), http://localhost:8124 (MoneyPuck)\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
+
+schedule-test-podman: ## Start full system and run scheduler with test data using Podman
+	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
+	@podman pull blnelson/firepowermockdataserver:latest
+	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (test data)...\n"
+	@podman-compose -f docker-compose.yml -f docker-compose.emulator.yml -f docker-compose.podman.yml up --build -d
 	@printf "$(GREEN)[OK]$(NC) Started with scheduler (test data)\n"
 	@printf "  Backend:            http://localhost:8080\n"
 	@printf "  Tasks emulator:     http://localhost:8123\n"

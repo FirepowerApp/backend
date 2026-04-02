@@ -31,7 +31,7 @@ func (f *FileScheduleFetcher) FetchSchedule(ctx context.Context, date string) ([
 	now := time.Now().UTC()
 	today := now.Format("2006-01-02")
 	for i := range games {
-		startTime := now.Add(time.Duration(i*10+60) * time.Second) // 60s + 10s per game
+		startTime := now.Add(time.Duration(i*10+30) * time.Second) // 30s + 10s per game
 		games[i].GameDate = today
 		games[i].StartTimeUTC = startTime.Format(time.RFC3339)
 		log.Printf("Adjusted game %d start time to %s", games[i].ID, games[i].StartTimeUTC)

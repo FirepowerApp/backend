@@ -203,7 +203,7 @@ func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 		Task:   task,
 	}
 
-	log.Printf("Sending task creation request for game %s to Cloud Tasks queue %s", payload.Game.ID, queuePath)
+	log.Printf("Sending task creation request in %ds for game %s to Cloud Tasks queue %s", int(interval.Seconds()), payload.Game.ID, queuePath)
 
 	_, err = tasksClient.CreateTask(tasksCtx, req)
 	if err != nil {

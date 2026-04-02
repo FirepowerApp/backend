@@ -51,6 +51,6 @@ func FetchPlayByPlay(gameID string) (lastPlay models.Play, maxPeriods *int) {
 	}
 
 	lastPlay = data.Plays[len(data.Plays)-1]
-	log.Printf("Last play type: %s", lastPlay.TypeDescKey)
+	log.Printf("Last play type: %s, regular season: %t", lastPlay.TypeDescKey, data.MaxPeriods != nil)
 	return lastPlay, data.MaxPeriods
 }

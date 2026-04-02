@@ -10,7 +10,7 @@ import (
 	"watchgameupdates/internal/models"
 )
 
-func FetchPlayByPlay(gameID string) (lastPlay models.Play) {
+func FetchPlayByPlay(gameID string) (lastPlay models.Play, maxPeriods *int) {
 	// Get play-by-play API base URL from environment variable
 	playByPlayAPIBaseURL := os.Getenv("PLAYBYPLAY_API_BASE_URL")
 	if playByPlayAPIBaseURL == "" {
@@ -51,6 +51,6 @@ func FetchPlayByPlay(gameID string) (lastPlay models.Play) {
 	}
 
 	lastPlay = data.Plays[len(data.Plays)-1]
-	log.Printf("Last play type: %s", lastPlay.TypeDescKey)
-	return lastPlay
+	log.Printf("Last play type: %s, regular season: %t", lastPlay.TypeDescKey, data.MaxPeriods != nil)
+	return lastPlay, data.MaxPeriods
 }

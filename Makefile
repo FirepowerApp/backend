@@ -8,7 +8,9 @@
 #   make schedule  - Start full system and run scheduler with live NHL data
 #   make schedule-test - Start full system and run scheduler with test data
 
-.PHONY: help live emulator stop logs schedule schedule-test
+TEAM ?= COL
+
+.PHONY: help live emulator stop logs schedule schedule-test watch
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -37,7 +39,7 @@ emulator: ## Pull game data emulator from registry and start all components (.en
 	@printf "View logs: make logs  |  Stop: make stop\n"
 
 stop: ## Stop all running containers
-	@docker compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml down 2>/dev/null || true
+	@docker compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml -f docker-compose.watch.yml down 2>/dev/null || true
 	@printf "$(GREEN)[OK]$(NC) Containers stopped\n"
 
 logs: ## Follow logs from running containers
@@ -50,6 +52,21 @@ schedule: ## Start full system and run scheduler with live NHL data
 	@printf "  Backend:        http://localhost:8080\n"
 	@printf "  Tasks emulator: http://localhost:8123\n"
 	@printf "View logs: make logs  |  Stop: make stop\n"
+
+watch: ## E2E live test for a team: schedules today's real game and follows logs (e.g. make watch TEAM=COL)
+	@printf "$(BLUE)[INFO]$(NC) Starting backend + Cloud Tasks emulator...\n"
+	@docker compose -f docker-compose.yml -f docker-compose.watch.yml up --build -d
+	@printf "$(BLUE)[INFO]$(NC) Waiting for services...\n"
+	@until nc -z localhost 8080 2>/dev/null; do sleep 1; done
+	@printf "$(BLUE)[INFO]$(NC) Scheduling live game for team: $(TEAM)\n"
+	@TEAM_FILTER=$(TEAM) docker compose \
+	  -f docker-compose.yml \
+	  -f docker-compose.watch.yml \
+	  --profile scheduler \
+	  run --rm scheduler
+	@printf "$(GREEN)[OK]$(NC) Game scheduled — following logs (look for 'APNs push: channel='):\n"
+	@printf "$(BLUE)[TIP]$(NC) Stop with: make stop\n"
+	@docker compose -f docker-compose.yml -f docker-compose.watch.yml logs -f
 
 schedule-test: ## Start full system and run scheduler with test data
 	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"

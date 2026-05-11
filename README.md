@@ -38,7 +38,9 @@ backend/
 │   │   ├── handlers/        # HTTP handlers
 │   │   ├── services/        # Business logic
 │   │   ├── tasks/           # Cloud Tasks integration
-│   │   └── models/          # Data models
+│   │   ├── models/          # Data models
+│   │   └── notification/    # Discord and LiveActivity (APNs) notifiers
+│   │       └── liveactivity/ # iOS Live Activity APNs broadcast push
 │   ├── config/              # Configuration management
 │   └── Dockerfile           # Container definition
 ├── localCloudTasksTest/     # Test client for Cloud Tasks
@@ -62,6 +64,7 @@ make pull                # Pull latest Docker images
 
 # Development
 make home                 # Start home environment (live APIs)
+make watch TEAM=COL      # Live e2e test: schedule today's real game and tail logs
 make test-containers     # Start test environment (mock APIs)
 make test                # Run full automated test suite
 
@@ -143,6 +146,7 @@ CLOUD_TASKS_EMULATOR_HOST=cloudtasks-emulator:8123
 PLAYBYPLAY_API_BASE_URL=http://mockdataapi-testserver-1:8125
 STATS_API_BASE_URL=http://mockdataapi-testserver-1:8124
 DISCORD_BOT_TOKEN=your_bot_token_here
+DISCORD_CHANNEL_ID=your_channel_id_here
 ```
 
 **`.env.home`** - Development environment with live APIs
@@ -152,11 +156,12 @@ CLOUD_TASKS_EMULATOR_HOST=cloudtasks-emulator:8123
 PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
 STATS_API_BASE_URL=https://moneypuck.com
 DISCORD_BOT_TOKEN=your_bot_token_here
+DISCORD_CHANNEL_ID=your_channel_id_here
 ```
 
-**`.env.example`** - Template for custom configurations
+**`.env.example`** - Template for custom configurations (includes APNs vars for Live Activity)
 
-Update the `DISCORD_BOT_TOKEN` in your environment files as needed.
+Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. To enable iOS Live Activity push, set `LIVEACTIVITY_PUSH_ENABLED=true` and populate the `APNS_*` vars — see `.env.example` for the full list.
 
 ## Testing
 
@@ -277,6 +282,7 @@ The project uses Docker Compose to orchestrate three main services:
 Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Reschedule/Complete
                     ↓
               Discord Notifications
+              LiveActivity APNs Push (iOS)
 ```
 
 ## Advanced Usage

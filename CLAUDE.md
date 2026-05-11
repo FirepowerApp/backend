@@ -4,7 +4,7 @@ This file provides guidance for AI assistants working in this repository.
 
 ## Project Overview
 
-CrashTheCrease Backend is a Go-based service that tracks NHL game updates and sends Discord notifications using Google Cloud Tasks for scheduling.
+CrashTheCrease Backend is a Go-based service that tracks NHL game updates and sends Discord notifications and iOS Live Activity APNs push notifications using Google Cloud Tasks for scheduling.
 
 ## Design Principles
 
@@ -82,7 +82,7 @@ make check-deps   # Verify Go and Docker
 
 ## Architecture
 
-**Data flow:** Cloud Tasks → HTTP Handler → Fetch Game Data → Process Events → Discord Notifications → Reschedule or Complete
+**Data flow:** Cloud Tasks → HTTP Handler → Fetch Game Data → Process Events → Discord + LiveActivity APNs Notifications → Reschedule or Complete
 
 **Key packages in `watchgameupdates/internal/`:**
 
@@ -92,7 +92,8 @@ make check-deps   # Verify Go and Docker
 | `services/` | Business logic (fetcher, play-by-play, rescheduler) |
 | `tasks/` | Google Cloud Tasks integration |
 | `models/` | Data structures (Payload, Play, PlayByPlayResponse) |
-| `notification/` | Discord webhook notifications |
+| `notification/` | Discord and LiveActivity (APNs broadcast push) notifiers |
+| `notification/liveactivity/` | iOS Live Activity APNs push (JWT signing, formatter, channel map) |
 | `config/` | Environment configuration |
 
 **Service ports:**
@@ -116,6 +117,15 @@ GCP_LOCATION=
 PLAYBYPLAY_API_BASE_URL=     # NHL API or mock
 STATS_API_BASE_URL=          # MoneyPuck API or mock
 DISCORD_BOT_TOKEN=
+DISCORD_CHANNEL_ID=          # Discord channel to post game updates
+
+# Live Activity APNs (optional — set LIVEACTIVITY_PUSH_ENABLED=true to enable)
+LIVEACTIVITY_PUSH_ENABLED=
+APNS_TEAM_ID=                # 10-char Apple Developer Team ID
+APNS_KEY_ID=                 # .p8 key ID from App Store Connect
+APNS_AUTH_KEY=               # base64-encoded .p8 file contents
+APNS_TOPIC=                  # bundle ID, e.g. me.blakenelson.firepower
+APNS_HOST=                   # api.sandbox.push.apple.com or api.push.apple.com
 ```
 
 ## Commit Guidelines

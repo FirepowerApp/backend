@@ -9,10 +9,22 @@ import (
 	"watchgameupdates/internal/handlers"
 	"watchgameupdates/internal/models"
 	"watchgameupdates/internal/notification"
+	"watchgameupdates/internal/notification/liveactivity"
 	"watchgameupdates/internal/services"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/funcframework"
 )
+
+// laNotifier is initialized once at startup; nil if LIVEACTIVITY_PUSH_ENABLED is not set.
+var laNotifier *liveactivity.LiveActivityNotifier
+
+func init() {
+	var err error
+	laNotifier, err = liveactivity.New()
+	if err != nil {
+		log.Printf("LiveActivity notifier not configured (normal if not enabled): %v", err)
+	}
+}
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	fetcher := &services.HTTPGameDataFetcher{}
@@ -35,8 +47,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		notificationService = notification.NewService()
 	}
+	if laNotifier != nil {
+		notificationService.RegisterNotifier(laNotifier)
+	}
 
-	// Call the handler
 	handlers.WatchGameUpdatesHandler(
 		w,
 		r,

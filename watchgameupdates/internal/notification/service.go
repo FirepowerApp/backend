@@ -185,3 +185,10 @@ func (s *Service) Close() error {
 	}
 	return lastErr
 }
+
+// RegisterNotifier adds a notifier and its required data keys to the service.
+// Call this after NewService to inject optional notifiers (e.g. LiveActivity).
+func (s *Service) RegisterNotifier(n Notifier) {
+	s.allRequiredDataKeys = append(s.allRequiredDataKeys, n.GetRequiredDataKeys()...)
+	s.notifiers = append(s.notifiers, n)
+}

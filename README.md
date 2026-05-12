@@ -5,7 +5,7 @@ A Go-based backend service for tracking and managing NHL game updates using Goog
 ## Prerequisites
 
 - **Go 1.23.3+** - [Install Go](https://go.dev/doc/install)
-- **Docker** - [Install Docker](https://docs.docker.com/get-docker/)
+- **Podman 5.0+** - [Install Podman](https://podman.io/docs/installation) (macOS: `brew install podman podman-compose`)
 - **Make** - Usually pre-installed on Linux/macOS
 
 ## Quick Start
@@ -56,9 +56,9 @@ Run `make help` to see all available commands:
 
 ```bash
 # Setup & Prerequisites
-make check-deps          # Check Go and Docker installation
+make check-deps          # Check Go and Podman installation
 make setup               # Initial setup (one-time)
-make pull                # Pull latest Docker images
+make pull                # Pull latest container images
 
 # Development
 make home                 # Start home environment (live APIs)
@@ -105,23 +105,23 @@ Configuration: `watchgameupdates/.env.local`
 
 **Using a Locally Built Mock API:**
 
-If you're developing changes to the gameDataEmulator alongside backend changes, build the emulator image locally from your branch and start the stack directly — bypassing the `docker pull` that `make emulator` and `make schedule-test` run first.
+If you're developing changes to the gameDataEmulator alongside backend changes, build the emulator image locally from your branch and start the stack directly — bypassing the `podman pull` that `make emulator` and `make schedule-test` run first.
 
 ```bash
 # 1. Build the emulator image from your local branch
 cd ../gameDataEmulator
 git checkout your-branch
-docker build -t blnelson/firepowermockdataserver:latest .
+podman build -t docker.io/blnelson/firepowermockdataserver:latest .
 
 # 2. Start the backend + mock API stack (no pull step)
 cd ../backend
-docker compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
+podman-compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
 ```
 
 To also run the full end-to-end sequence with the scheduler (which seeds the queue and triggers notifications):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
+podman-compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
 ```
 
 This is equivalent to `make schedule-test` but uses your locally built emulator image instead of pulling the latest from the registry. Services will be available at:
@@ -130,7 +130,7 @@ This is equivalent to `make schedule-test` but uses your locally built emulator 
 - Mock NHL API: http://localhost:8125
 - Mock MoneyPuck API: http://localhost:8124
 
-The reason only the emulator needs a separate build step is that the backend is always built from local source by Docker Compose (via the `build:` directive in `docker-compose.yml`), so it automatically reflects any local changes. The emulator, by contrast, is referenced as a pre-built image (`image: blnelson/firepowermockdataserver:latest`), so Compose just uses whatever is cached locally under that tag. The difference between this approach and `make schedule-test` is that the Makefile target runs `docker pull blnelson/firepowermockdataserver:latest` before starting the stack, which would overwrite your locally built image with the latest version from the registry. By invoking `docker compose` directly and skipping that pull, Docker uses the local image you built from your branch instead.
+The reason only the emulator needs a separate build step is that the backend is always built from local source by Compose (via the `build:` directive in `docker-compose.yml`), so it automatically reflects any local changes. The emulator, by contrast, is referenced as a pre-built image, so Compose just uses whatever is cached locally under that tag. The difference between this approach and `make schedule-test` is that the Makefile target runs `podman pull` before starting the stack, which would overwrite your locally built image with the latest version from the registry. By invoking `podman-compose` directly and skipping that pull, Podman uses the local image you built from your branch instead.
 
 ### Configuration
 
@@ -246,7 +246,7 @@ cd watchgameupdates && go tool cover -html=coverage.out
 
 ### Services
 
-The project uses Docker Compose to orchestrate three main services:
+The project uses Compose to orchestrate three main services:
 
 **Cloud Tasks Emulator**
 - Emulates Google Cloud Tasks for local development
@@ -281,27 +281,27 @@ Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Resch
 
 ## Advanced Usage
 
-### Direct Docker Compose Usage
+### Direct Compose Usage
 
-If you prefer using Docker Compose directly:
+If you prefer using Podman Compose directly:
 
 ```bash
 # Start home environment
-docker compose --profile home up -d
+podman-compose --profile home up -d
 
 # Start test environment
-docker compose --profile test up -d
+podman-compose --profile test up -d
 
 # View logs
-docker compose logs -f
+podman-compose logs -f
 
 # Stop all services
-docker compose down
+podman-compose down
 ```
 
 ### Building Binaries
 
-Build Go binaries without Docker:
+Build Go binaries without Podman:
 
 ```bash
 # Build all binaries
@@ -316,21 +316,21 @@ go run build.go -target localCloudTasksTest
 
 ### Manual Container Setup
 
-For manual Docker setup without Docker Compose:
+For manual setup without Compose:
 
 ```bash
 # Create network
-docker network create net
+podman network create net
 
 # Start Cloud Tasks emulator
-docker pull ghcr.io/aertje/cloud-tasks-emulator:latest
-docker run -d --name cloudtasks-emulator --network net -p 8123:8123 \
+podman pull ghcr.io/aertje/cloud-tasks-emulator:latest
+podman run -d --name cloudtasks-emulator --network net -p 8123:8123 \
   ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0
 
 # Build and run backend
 cd watchgameupdates
-docker build -t watchgameupdates .
-docker run -d -p 8080:8080 --name watchgameupdates --network net \
+podman build -t watchgameupdates .
+podman run -d -p 8080:8080 --name watchgameupdates --network net \
   --env-file .env.home watchgameupdates
 cd ..
 
@@ -358,8 +358,8 @@ make clean
 # Run diagnostics
 make doctor
 
-# Check Docker is running
-docker info
+# Check Podman is running (macOS: ensure podman machine is started)
+podman info
 
 # View service logs
 make logs
@@ -371,7 +371,7 @@ The Makefile includes automatic retry logic with exponential backoff (2s, 4s, 8s
 
 ```bash
 # Manually pull images
-docker pull ghcr.io/aertje/cloud-tasks-emulator:latest
+podman pull ghcr.io/aertje/cloud-tasks-emulator:latest
 
 # Or retry with make
 make pull
@@ -393,6 +393,12 @@ curl http://localhost:8080
 curl http://localhost:8123
 ```
 
+> **macOS note:** Podman runs containers inside a Linux VM (`podman machine`). On first use, initialize and start it:
+> ```bash
+> podman machine init
+> podman machine start
+> ```
+
 ### Debugging
 
 ```bash
@@ -407,10 +413,10 @@ make logs-cloudtasks
 make shell-backend
 
 # Check container status
-docker compose ps
+podman-compose ps
 
 # Inspect container details
-docker inspect watchgameupdates
+podman inspect watchgameupdates
 ```
 
 ### Clean Restart
@@ -469,8 +475,8 @@ GET https://moneypuck.com/moneypuck/gameData/{season}/{game_id}.csv
 
 ```bash
 cd watchgameupdates
-docker build -t crashthecrease-backend .
-docker run -p 8080:8080 crashthecrease-backend
+podman build -t crashthecrease-backend .
+podman run -p 8080:8080 crashthecrease-backend
 ```
 
 ### Google Cloud Platform
@@ -500,7 +506,7 @@ Update environment variables for production:
 3. Rebuild and restart:
    ```bash
    # Rebuild and restart all services
-   docker compose --profile home up -d --build
+   podman-compose --profile home up -d --build
 
    # Or use make
    make stop

@@ -33,7 +33,7 @@ When making changes, ensure:
 
 ## Development Setup
 
-**Prerequisites:** Go 1.23.3+, Docker, Make
+**Prerequisites:** Go 1.23.3+, Podman 5.0+ and podman-compose, Make
 
 ```bash
 make setup   # One-time setup: check deps, pull images, download Go modules
@@ -77,7 +77,7 @@ make clean             # Remove containers
 ```bash
 make doctor       # Run diagnostics
 make port-check   # Check port availability
-make check-deps   # Verify Go and Docker
+make check-deps   # Verify Go and Podman
 ```
 
 ## Architecture
@@ -148,7 +148,7 @@ All commits must follow the [Conventional Commits](https://www.conventionalcommi
 
 ### Scopes (optional but encouraged)
 
-Use the affected area: `handlers`, `services`, `tasks`, `notification`, `models`, `config`, `docker`, `makefile`
+Use the affected area: `handlers`, `services`, `tasks`, `notification`, `models`, `config`, `docker`, `podman`, `makefile`
 
 ### Examples
 

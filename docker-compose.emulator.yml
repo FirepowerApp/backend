@@ -17,7 +17,7 @@ services:
       - ./testdata:/testdata:ro
 
   mockdataapi:
-    image: blnelson/firepowermockdataserver:latest
+    image: docker.io/blnelson/firepowermockdataserver:latest
     ports:
       - "8124:8124"  # MoneyPuck API mock
       - "8125:8125"  # NHL API mock

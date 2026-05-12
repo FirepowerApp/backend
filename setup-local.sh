@@ -52,20 +52,37 @@ check_go_version() {
     log_success "Go version $GO_VERSION is installed and compatible"
 }
 
-# Function to check Docker installation
-check_docker() {
-    if ! command_exists docker; then
-        log_warning "Docker is not installed. Docker is required for Cloud Tasks emulator."
-        log_info "Please install Docker from https://docs.docker.com/get-docker/"
+# Function to check Podman installation
+check_podman() {
+    if ! command_exists podman; then
+        log_warning "Podman is not installed. Podman is required for the Cloud Tasks emulator."
+        log_info "macOS: brew install podman"
+        log_info "Linux: see https://podman.io/docs/installation"
         return 1
     fi
 
-    if ! docker info >/dev/null 2>&1; then
-        log_warning "Docker is installed but not running. Please start Docker."
+    if [ "$(uname)" = "Darwin" ]; then
+        if ! podman machine list --format '{{.Running}}' 2>/dev/null | grep -q true; then
+            log_warning "No running podman machine found."
+            log_info "Initialize and start one with:"
+            log_info "  podman machine init && podman machine start"
+            log_info "Then re-run this script."
+            return 1
+        fi
+    fi
+
+    if ! podman info >/dev/null 2>&1; then
+        log_warning "Podman is installed but not reachable."
         return 1
     fi
 
-    log_success "Docker is installed and running"
+    if ! command_exists podman-compose; then
+        log_warning "podman-compose not found."
+        log_info "macOS: brew install podman-compose"
+        return 1
+    fi
+
+    log_success "Podman is installed and running"
     return 0
 }
 
@@ -120,23 +137,11 @@ setup_data_directory() {
     fi
 }
 
-# Function to create Docker network
-setup_docker_network() {
-    log_info "Setting up Docker network..."
+# Function to pull required container images
+pull_images() {
+    log_info "Pulling required container images..."
 
-    if ! docker network ls | grep -q "net"; then
-        docker network create net
-        log_success "Docker network 'net' created"
-    else
-        log_success "Docker network 'net' already exists"
-    fi
-}
-
-# Function to pull required Docker images
-pull_docker_images() {
-    log_info "Pulling required Docker images..."
-
-    docker pull ghcr.io/aertje/cloud-tasks-emulator:latest
+    podman pull ghcr.io/aertje/cloud-tasks-emulator:latest
     log_success "Cloud Tasks emulator image pulled"
 }
 
@@ -151,11 +156,11 @@ check_port_availability() {
         lsof -i :$port
 
         # Check if it's our container
-        if docker ps --format "table {{.Names}}\t{{.Ports}}" | grep -q ":$port->"; then
-            log_info "Port $port is used by an existing Docker container, will clean up"
+        if podman ps --format "table {{.Names}}\t{{.Ports}}" | grep -q ":$port->"; then
+            log_info "Port $port is used by an existing container, will clean up"
             return 1
         else
-            log_error "Port $port is in use by a non-Docker process. Please stop the process or use a different port."
+            log_error "Port $port is in use by a non-Podman process. Please stop the process or use a different port."
             log_info "You can find and stop the process with: kill \$(lsof -t -i:$port)"
             return 2
         fi
@@ -168,15 +173,15 @@ cleanup_containers() {
     log_info "Cleaning up existing containers..."
 
     # Check if our containers exist
-    existing_containers=$(docker ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "{{.Names}}" 2>/dev/null || true)
+    existing_containers=$(podman ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "{{.Names}}" 2>/dev/null || true)
 
     if [ -n "$existing_containers" ]; then
         log_info "Found existing containers: $existing_containers"
         log_info "Stopping and removing them to create fresh containers..."
 
         # Stop and remove our specific containers
-        docker stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
-        docker rm -f cloudtasks-emulator sendgameupdates 2>/dev/null || true
+        podman stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
+        podman rm -f cloudtasks-emulator sendgameupdates 2>/dev/null || true
 
         log_success "Existing containers cleaned up"
     else
@@ -184,11 +189,11 @@ cleanup_containers() {
     fi
 
     # Also clean up any other containers that might be using our ports
-    conflicting_containers=$(docker ps -a --format "table {{.Names}}\t{{.Ports}}" | grep -E ":8080->|:8123->" | awk '{print $1}' | grep -v NAMES | grep -v "cloudtasks-emulator\|sendgameupdates" || true)
+    conflicting_containers=$(podman ps -a --format "table {{.Names}}\t{{.Ports}}" | grep -E ":8080->|:8123->" | awk '{print $1}' | grep -v NAMES | grep -v "cloudtasks-emulator\|sendgameupdates" || true)
 
     if [ -n "$conflicting_containers" ]; then
         log_warning "Found containers using our ports: $conflicting_containers"
-        echo "$conflicting_containers" | xargs -r docker rm -f 2>/dev/null || true
+        echo "$conflicting_containers" | xargs -r podman rm -f 2>/dev/null || true
         log_success "Conflicting containers cleaned up"
     fi
 }
@@ -198,9 +203,9 @@ start_cloud_tasks_emulator() {
     log_info "Starting Cloud Tasks emulator..."
 
     # Remove any existing container with the same name
-    docker rm -f cloudtasks-emulator 2>/dev/null || true
+    podman rm -f cloudtasks-emulator 2>/dev/null || true
 
-    if docker run -d --name cloudtasks-emulator --network net -p 8123:8123 \
+    if podman run -d --name cloudtasks-emulator --network net -p 8123:8123 \
         ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0; then
 
         # Wait for emulator to be ready
@@ -208,7 +213,7 @@ start_cloud_tasks_emulator() {
         sleep 5
 
         # Check if container is running
-        if docker ps | grep -q cloudtasks-emulator; then
+        if podman ps | grep -q cloudtasks-emulator; then
             log_success "Cloud Tasks emulator started successfully"
 
             # Test if the emulator is responding
@@ -224,7 +229,7 @@ start_cloud_tasks_emulator() {
             done
         else
             log_error "Cloud Tasks emulator container is not running"
-            docker logs cloudtasks-emulator 2>/dev/null || true
+            podman logs cloudtasks-emulator 2>/dev/null || true
             exit 1
         fi
     else
@@ -235,7 +240,7 @@ start_cloud_tasks_emulator() {
 
 # Function to build and run the main service container
 build_and_run_service() {
-    log_info "Building main service Docker image..."
+    log_info "Building main service container image..."
 
     cd watchgameupdates
     if [ ! -f "Dockerfile" ]; then
@@ -243,26 +248,26 @@ build_and_run_service() {
         exit 1
     fi
 
-    if docker build -t sendgameupdates .; then
-        log_success "Docker image built successfully"
+    if podman build -t sendgameupdates .; then
+        log_success "Container image built successfully"
     else
-        log_error "Failed to build Docker image"
+        log_error "Failed to build container image"
         exit 1
     fi
 
     log_info "Starting main service container..."
 
     # Remove any existing container with the same name
-    docker rm -f sendgameupdates 2>/dev/null || true
+    podman rm -f sendgameupdates 2>/dev/null || true
 
-    if docker run -d -p 8080:8080 --name sendgameupdates --network net \
+    if podman run -d -p 8080:8080 --name sendgameupdates --network net \
         --env-file .env sendgameupdates; then
 
         # Wait for service to be ready
         log_info "Waiting for main service to be ready..."
         sleep 5
 
-        if docker ps | grep -q sendgameupdates; then
+        if podman ps | grep -q sendgameupdates; then
             log_success "Main service container started successfully"
 
             # Test if the service is responding
@@ -272,7 +277,7 @@ build_and_run_service() {
                     break
                 elif [ $i -eq 15 ]; then
                     log_warning "Main service may not be fully ready yet (this can be normal on first start)"
-                    log_info "You can check the service status with: docker logs sendgameupdates"
+                    log_info "You can check the service status with: podman logs sendgameupdates"
                 else
                     sleep 2
                 fi
@@ -280,7 +285,7 @@ build_and_run_service() {
         else
             log_error "Main service container is not running"
             log_info "Checking container logs..."
-            docker logs sendgameupdates 2>/dev/null || true
+            podman logs sendgameupdates 2>/dev/null || true
             exit 1
         fi
     else
@@ -328,29 +333,29 @@ monitor_containers() {
     log_info "Monitoring containers... (Press Ctrl+C to stop)"
     echo ""
     log_info "Container status:"
-    docker ps --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    podman ps --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
     echo ""
 
     # Monitor container health and display logs
     while true; do
         # Check if both containers are still running
-        running_containers=$(docker ps --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "{{.Names}}" | wc -l)
+        running_containers=$(podman ps --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "{{.Names}}" | wc -l)
 
         if [ "$running_containers" -lt 2 ]; then
             log_warning "One or more containers have stopped. Checking status..."
 
             # Show status of our containers
-            docker ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "table {{.Names}}\t{{.Status}}"
+            podman ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --format "table {{.Names}}\t{{.Status}}"
 
             # Check if containers exited with errors
-            failed_containers=$(docker ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --filter "status=exited" --format "{{.Names}}")
+            failed_containers=$(podman ps -a --filter "name=cloudtasks-emulator" --filter "name=sendgameupdates" --filter "status=exited" --format "{{.Names}}")
 
             if [ -n "$failed_containers" ]; then
                 log_error "Containers failed: $failed_containers"
                 log_info "Showing logs for failed containers:"
                 for container in $failed_containers; do
                     echo "--- Logs for $container ---"
-                    docker logs --tail 20 "$container" 2>&1 || true
+                    podman logs --tail 20 "$container" 2>&1 || true
                     echo ""
                 done
                 log_error "Services have failed. Check the logs above for details."
@@ -372,10 +377,10 @@ main() {
     log_info "Checking prerequisites..."
     check_go_version
 
-    DOCKER_AVAILABLE=true
-    if ! check_docker; then
-        DOCKER_AVAILABLE=false
-        log_warning "Docker setup will be skipped"
+    PODMAN_AVAILABLE=true
+    if ! check_podman; then
+        PODMAN_AVAILABLE=false
+        log_warning "Podman setup will be skipped"
     fi
 
     # Set up data directory
@@ -395,8 +400,8 @@ main() {
     chmod +x GetEventDataByDate.sh
     chmod +x watchgameupdates/scripts/local_cloud_task_test.sh
 
-    # Docker setup (if available and not skipped)
-    if [ "$DOCKER_AVAILABLE" = true ] && [ "${SKIP_DOCKER:-false}" != "true" ]; then
+    # Podman setup (if available and not skipped)
+    if [ "$PODMAN_AVAILABLE" = true ] && [ "${SKIP_PODMAN:-false}" != "true" ]; then
         # Check for port conflicts before starting
         log_info "Checking port availability..."
 
@@ -411,8 +416,7 @@ main() {
             exit 1
         fi
 
-        setup_docker_network
-        pull_docker_images
+        pull_images
         cleanup_containers
 
         # Wait a moment for cleanup to complete
@@ -438,25 +442,25 @@ main() {
     log_success "Setup completed successfully!"
     echo ""
 
-    if [ "$DOCKER_AVAILABLE" = true ] && [ "${SKIP_DOCKER:-false}" != "true" ]; then
-        log_info "Services are running in Docker containers:"
+    if [ "$PODMAN_AVAILABLE" = true ] && [ "${SKIP_PODMAN:-false}" != "true" ]; then
+        log_info "Services are running in containers:"
         echo "  - Cloud Tasks Emulator: http://localhost:8123"
         echo "  - Main Service: http://localhost:8080"
         echo ""
         log_info "Available for testing:"
         echo "  - Use the GetEventDataByDate.sh script to fetch game data"
         echo "  - Run localCloudTasksTest/localCloudTasksTest to create tasks"
-        echo "  - Check Docker containers: docker ps"
+        echo "  - Check containers: podman ps"
         echo ""
         log_info "Press Ctrl+C to stop services (containers will be preserved for faster restart)"
     else
-        log_info "Docker setup skipped. Available binaries:"
+        log_info "Podman setup skipped. Available binaries:"
         echo "  - ./watchgameupdates/watchgameupdates (main service)"
         echo "  - ./localCloudTasksTest/localCloudTasksTest (test client)"
         echo ""
         log_info "Available scripts:"
         echo "  - ./GetEventDataByDate.sh (fetch NHL game data)"
-        echo "  - ./watchgameupdates/scripts/local_cloud_task_test.sh (Docker setup reference)"
+        echo "  - ./watchgameupdates/scripts/local_cloud_task_test.sh (compose reference)"
     fi
 }
 
@@ -465,10 +469,10 @@ cleanup_on_interrupt() {
     log_info "Received interrupt signal, stopping containers..."
 
     # Stop containers gracefully but don't remove them
-    docker stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
+    podman stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
 
     log_success "Containers stopped. They will be cleaned up and rebuilt on next script run."
-    log_info "To manually clean up: docker rm cloudtasks-emulator sendgameupdates"
+    log_info "To manually clean up: podman rm cloudtasks-emulator sendgameupdates"
     exit 0
 }
 
@@ -476,13 +480,13 @@ cleanup_on_interrupt() {
 cleanup_on_failure() {
     if [ "$1" != "0" ]; then
         log_info "Setup failed, stopping containers..."
-        docker stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
+        podman stop cloudtasks-emulator sendgameupdates 2>/dev/null || true
 
         if [ "${CLEANUP_ON_EXIT:-true}" = "true" ]; then
             log_info "Removing failed containers..."
-            docker rm cloudtasks-emulator sendgameupdates 2>/dev/null || true
+            podman rm cloudtasks-emulator sendgameupdates 2>/dev/null || true
         else
-            log_info "Leaving containers for debugging. Clean up with: docker rm cloudtasks-emulator sendgameupdates"
+            log_info "Leaving containers for debugging. Clean up with: podman rm cloudtasks-emulator sendgameupdates"
         fi
     fi
 }
@@ -494,8 +498,8 @@ trap 'cleanup_on_failure $?' EXIT
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --skip-docker)
-            SKIP_DOCKER=true
+        --skip-podman)
+            SKIP_PODMAN=true
             shift
             ;;
         --no-cleanup)
@@ -508,7 +512,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --skip-docker    Skip Docker setup (build binaries only)"
+            echo "  --skip-podman    Skip Podman setup (build binaries only)"
             echo "  --no-cleanup     Don't cleanup on failure"
             echo "  --help, -h       Show this help message"
             echo ""
@@ -517,7 +521,7 @@ while [[ $# -gt 0 ]]; do
             echo "  2. Install dependencies for all Go modules"
             echo "  3. Build all services and binaries"
             echo "  4. Set up data directory"
-            echo "  5. Set up Docker environment (Cloud Tasks emulator + main service)"
+            echo "  5. Set up Podman environment (Cloud Tasks emulator + main service)"
             echo "  6. Create Cloud Tasks queue"
             echo "  7. Test the setup"
             echo "  8. Keep running and monitor containers"
@@ -529,7 +533,7 @@ while [[ $# -gt 0 ]]; do
             echo "  - This provides faster restarts during development"
             echo ""
             echo "Environment Variables:"
-            echo "  SKIP_DOCKER=true       Same as --skip-docker"
+            echo "  SKIP_PODMAN=true       Same as --skip-podman"
             echo "  CLEANUP_ON_EXIT=false  Same as --no-cleanup"
             exit 0
             ;;

@@ -152,11 +152,18 @@ CLOUD_TASKS_EMULATOR_HOST=cloudtasks-emulator:8123
 PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
 STATS_API_BASE_URL=https://moneypuck.com
 DISCORD_BOT_TOKEN=your_bot_token_here
+MESSAGE_INTERVAL_SECONDS=60          # How often to poll during active play (default: 60)
+PERIOD_END_INTERVAL_SECONDS=1200     # How long to wait after a period ends (default: 1200 = 20min)
 ```
 
 **`.env.example`** - Template for custom configurations
 
 Update the `DISCORD_BOT_TOKEN` in your environment files as needed.
+
+**Tuning reschedule intervals:** `MESSAGE_INTERVAL_SECONDS` controls how frequently the
+handler re-checks a live game (default 60s). When a period ends, the service uses
+`PERIOD_END_INTERVAL_SECONDS` instead (default 1200s / 20 minutes) to avoid unnecessary
+polling during intermissions.
 
 ## Testing
 

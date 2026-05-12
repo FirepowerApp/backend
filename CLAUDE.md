@@ -110,12 +110,14 @@ Copy `.env.example` to `.env.home` or `.env.local` and populate:
 
 ```
 APP_ENV=development
-CLOUD_TASKS_EMULATOR_HOST=   # local dev only
+CLOUD_TASKS_EMULATOR_HOST=        # local dev only
 GCP_PROJECT_ID=
 GCP_LOCATION=
-PLAYBYPLAY_API_BASE_URL=     # NHL API or mock
-STATS_API_BASE_URL=          # MoneyPuck API or mock
+PLAYBYPLAY_API_BASE_URL=          # NHL API or mock
+STATS_API_BASE_URL=               # MoneyPuck API or mock
 DISCORD_BOT_TOKEN=
+MESSAGE_INTERVAL_SECONDS=60       # active-play polling interval (default 60)
+PERIOD_END_INTERVAL_SECONDS=1200  # post-period-end wait before next poll (default 1200)
 ```
 
 ## Commit Guidelines

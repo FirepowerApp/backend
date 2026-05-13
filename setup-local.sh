@@ -193,7 +193,7 @@ cleanup_containers() {
 
     if [ -n "$conflicting_containers" ]; then
         log_warning "Found containers using our ports: $conflicting_containers"
-        echo "$conflicting_containers" | xargs -r podman rm -f 2>/dev/null || true
+        echo "$conflicting_containers" | xargs podman rm -f 2>/dev/null || true
         log_success "Conflicting containers cleaned up"
     fi
 }
@@ -416,6 +416,7 @@ main() {
             exit 1
         fi
 
+        podman network create net 2>/dev/null || true
         pull_images
         cleanup_containers
 

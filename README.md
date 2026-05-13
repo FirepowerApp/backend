@@ -293,14 +293,14 @@ Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Resch
 If you prefer using Podman Compose directly:
 
 ```bash
-# Start home environment
-podman-compose --profile home up -d
+# Start home environment (live APIs)
+podman-compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
 
-# Start test environment
-podman-compose --profile test up -d
+# Start test environment (mock APIs)
+podman-compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
 
 # View logs
-podman-compose logs -f
+podman-compose -f docker-compose.yml logs --follow backend
 
 # Stop all services
 podman-compose down

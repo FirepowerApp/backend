@@ -36,9 +36,9 @@ When making changes, ensure:
 **Prerequisites:** Go 1.23.3+, Podman 5.0+ and podman-compose, Make
 
 ```bash
-make setup   # One-time setup: check deps, pull images, download Go modules
-make home    # Start with live NHL/MoneyPuck APIs
+make live    # Start with live NHL/MoneyPuck APIs
 make stop    # Stop all services
+make logs    # View container logs
 ```
 
 ## Common Commands
@@ -46,8 +46,9 @@ make stop    # Stop all services
 ### Building
 
 ```bash
-make build            # Build all binaries
-make build-backend    # Build backend only
+# Build Go binaries locally (no container required)
+go run build.go -all         # Build all binaries to ./bin/
+go run build.go -target watchgameupdates
 ```
 
 ### Testing
@@ -58,26 +59,20 @@ go test ./...
 go test -v -cover ./...
 go test -v ./internal/services   # Specific package
 
-# Integration tests
-make test                        # Full suite with mock APIs
-make test LOCAL_MOCK=true        # Use locally-built mock API image
+# Integration tests (full stack with mock APIs)
+make emulator    # Start backend + mock APIs
+make stop        # Stop when done
 ```
 
 ### Running Locally
 
 ```bash
-make home              # Start with live APIs (development)
-make test-containers   # Start with mock APIs (testing)
+make live              # Start with live APIs (development)
+make emulator          # Start with mock APIs (testing)
 make logs              # View container logs
-make clean             # Remove containers
-```
-
-### Diagnostics
-
-```bash
-make doctor       # Run diagnostics
-make port-check   # Check port availability
-make check-deps   # Verify Go and Podman
+make stop              # Stop all containers
+make schedule          # Start with scheduler (live data)
+make schedule-test     # Start with scheduler (mock data)
 ```
 
 ## Architecture

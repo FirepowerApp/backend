@@ -21,6 +21,13 @@ import (
 	"time"
 )
 
+const (
+	apnsHTTPTimeout       = 10 * time.Second
+	apnsExpirationOffset  = 15 * time.Minute
+	apnsPriority          = "10"
+	apnsResponseBodyLimit = 512
+)
+
 type apnsClient struct {
 	http     *http.Client
 	signer   *jwtSigner
@@ -35,7 +42,7 @@ func newAPNsClient(cfg *Config) (*apnsClient, error) {
 	}
 
 	httpClient := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: apnsHTTPTimeout,
 	}
 
 	return &apnsClient{
@@ -54,7 +61,7 @@ func (c *apnsClient) Push(ctx context.Context, channelID string, payload []byte)
 		return fmt.Errorf("get JWT: %w", err)
 	}
 
-	expiration := fmt.Sprintf("%d", time.Now().Add(15*time.Minute).Unix())
+	expiration := fmt.Sprintf("%d", time.Now().Add(apnsExpirationOffset).Unix())
 	url := fmt.Sprintf("https://%s/4/broadcasts/apps/%s", c.host, c.bundleID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
@@ -64,7 +71,7 @@ func (c *apnsClient) Push(ctx context.Context, channelID string, payload []byte)
 	req.Header.Set("authorization", "bearer "+jwt)
 	req.Header.Set("apns-push-type", "liveactivity")
 	req.Header.Set("apns-channel-id", channelID)
-	req.Header.Set("apns-priority", "10")
+	req.Header.Set("apns-priority", apnsPriority)
 	req.Header.Set("apns-expiration", expiration)
 	req.Header.Set("content-type", "application/json")
 
@@ -78,7 +85,7 @@ func (c *apnsClient) Push(ctx context.Context, channelID string, payload []byte)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, apnsResponseBodyLimit))
 	log.Printf("APNs push: channel=%s status=%d latency_ms=%d", channelID, resp.StatusCode, latencyMs)
 
 	switch resp.StatusCode {

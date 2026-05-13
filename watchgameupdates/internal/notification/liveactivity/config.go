@@ -13,7 +13,6 @@ type Config struct {
 	AuthKey string // contents of .p8 file (not a path, container-friendly)
 	Topic   string // bundle ID, e.g. me.blakenelson.firepower
 	Host    string // api.push.apple.com or api.sandbox.push.apple.com
-	Enabled bool
 }
 
 func LoadConfig() (*Config, error) {
@@ -44,6 +43,5 @@ func LoadConfig() (*Config, error) {
 		AuthKey: vars["APNS_AUTH_KEY"],
 		Topic:   vars["APNS_TOPIC"],
 		Host:    host,
-		Enabled: true,
 	}, nil
 }

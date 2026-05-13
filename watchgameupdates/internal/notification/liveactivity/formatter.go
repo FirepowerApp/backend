@@ -141,7 +141,7 @@ func buildContentState(req NotificationRequest) (contentState, error) {
 	}, nil
 }
 
-// safeXG parses an xG string and guards against NaN/Inf (CRITICAL Gap 2B).
+// safeXG parses an xG string, returning 0 for empty, unparseable, NaN, or Inf values.
 func safeXG(s string) float64 {
 	if s == "" {
 		return 0
@@ -162,8 +162,8 @@ func parseIntSafe(s string) int {
 	return v
 }
 
-// formatLastEvent converts a play TypeDescKey to a human-readable string
-// (CRITICAL Gap 2A — nil/empty is handled by returning "" safely).
+// formatLastEvent converts a play TypeDescKey to a human-readable string.
+// Empty or unrecognized types return "" safely.
 func formatLastEvent(playType string) string {
 	switch playType {
 	case "goal":

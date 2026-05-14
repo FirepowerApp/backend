@@ -19,6 +19,7 @@ import (
 var laNotifier *liveactivity.LiveActivityNotifier
 
 func init() {
+	log.SetFlags(0)
 	var err error
 	laNotifier, err = liveactivity.New()
 	if err != nil {

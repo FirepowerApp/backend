@@ -115,7 +115,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 			ID:           2025020002,
 			GameDate:     "2025-10-08",
 			StartTimeUTC: futureTime,
-			GameState:    "LIVE",
+			GameState:    "PRE",
 			HomeTeam:     models.Team{Abbrev: "BOS", ID: 6},
 			AwayTeam:     models.Team{Abbrev: "NYR", ID: 3},
 		},
@@ -123,9 +123,17 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 			ID:           2025020003,
 			GameDate:     "2025-10-08",
 			StartTimeUTC: futureTime,
-			GameState:    "OFF",
+			GameState:    "LIVE",
 			HomeTeam:     models.Team{Abbrev: "VAN", ID: 23},
 			AwayTeam:     models.Team{Abbrev: "EDM", ID: 22},
+		},
+		{
+			ID:           2025020004,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    "OFF",
+			HomeTeam:     models.Team{Abbrev: "COL", ID: 21},
+			AwayTeam:     models.Team{Abbrev: "DAL", ID: 25},
 		},
 	}
 
@@ -138,12 +146,16 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(q.tasks) != 1 {
-		t.Fatalf("expected 1 task (only FUT games), got %d", len(q.tasks))
+	if len(q.tasks) != 2 {
+		t.Fatalf("expected 2 tasks (FUT and PRE games), got %d", len(q.tasks))
 	}
 
-	if q.tasks[0].payload.Game.ID != "2025020001" {
-		t.Errorf("expected game ID 2025020001, got %s", q.tasks[0].payload.Game.ID)
+	scheduledIDs := map[string]bool{
+		q.tasks[0].payload.Game.ID: true,
+		q.tasks[1].payload.Game.ID: true,
+	}
+	if !scheduledIDs["2025020001"] || !scheduledIDs["2025020002"] {
+		t.Errorf("expected games 2025020001 (FUT) and 2025020002 (PRE) to be scheduled, got %v", scheduledIDs)
 	}
 }
 

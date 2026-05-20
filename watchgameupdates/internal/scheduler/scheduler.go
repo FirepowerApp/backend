@@ -71,8 +71,8 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			continue
 		}
 
-		if game.GameState != "FUT" {
-			log.Printf("Skipping game %d (%s vs %s) - state is %s, not FUT",
+		if game.GameState != "FUT" && game.GameState != "PRE" {
+			log.Printf("Skipping game %d (%s vs %s) - state is %s, not FUT or PRE",
 				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, game.GameState)
 			continue
 		}

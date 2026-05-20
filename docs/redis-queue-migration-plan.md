@@ -1,7 +1,16 @@
 # Redis Queue Migration Plan
 
 **Tracking Issue:** #10
-**Status:** Planning
+**Status:** Phase 1 landed (dual-mode). Phase 2 (Cloud Tasks removal) pending.
+
+## Current Plan: Dual-Mode, Then Redis-Only
+
+This migration ships in two phases to de-risk the cutover:
+
+- **Phase 1 (landed)** — Redis/Asynq worker mode runs **alongside** the existing Cloud Tasks HTTP mode. The same binary selects between them via `-mode={http,worker}` (see `cmd/watchgameupdates/main.go`). Cloud Tasks code (`internal/tasks/client.go`, `internal/tasks/factory.go`, `localCloudTasksTest/`, GCP deps in `go.mod`) is intentionally preserved. A new `docker-compose.redis.yml` brings up Redis + Asynqmon + worker; the existing `docker-compose.yml` is untouched. This lets production keep running on Cloud Tasks while we validate the worker path.
+- **Phase 2 (planned)** — once the worker has soaked in a real environment, delete the Cloud Tasks code paths, drop GCP deps, replace `docker-compose.yml`, and remove the `-mode` flag. The instructions in "Phase 5: Clean up Cloud Tasks code" below describe that work and apply to Phase 2, not the current diff.
+
+The original full-replacement design follows for reference. Treat anything labelled "Delete" or "Rewrite" of an existing file as Phase 2 work.
 
 ## Overview
 

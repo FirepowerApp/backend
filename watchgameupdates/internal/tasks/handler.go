@@ -32,7 +32,9 @@ func NewWatchGameUpdatesHandler(cfg *config.Config, enqueuer TaskEnqueuer) *Watc
 func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
 	payload, err := ParseWatchGameUpdatesPayload(t)
 	if err != nil {
-		return fmt.Errorf("failed to parse task payload: %w", err)
+		// Poison pill: malformed JSON will never succeed on retry. Drop the task.
+		log.Printf("Dropping task with invalid payload: %v", err)
+		return nil
 	}
 
 	log.Printf("Processing task for game %s", payload.Game.ID)
@@ -40,7 +42,9 @@ func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task
 	// Check execution window
 	skip, err := services.ShouldSkipExecution(payload)
 	if err != nil {
-		return fmt.Errorf("error checking execution window: %w", err)
+		// Poison pill: malformed ExecutionEnd will never parse on retry. Drop the task.
+		log.Printf("Dropping task for game %s with invalid execution window: %v", payload.Game.ID, err)
+		return nil
 	}
 	if skip {
 		log.Printf("Execution window expired for game %s, task complete.", payload.Game.ID)

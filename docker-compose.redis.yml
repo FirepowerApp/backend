@@ -66,10 +66,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    healthcheck:
-      <<: *healthcheck-defaults
-      # Worker process doesn't expose HTTP; check that the process is running
-      test: ["CMD-SHELL", "pgrep main || exit 1"]
+    # No healthcheck: the worker runs on distroless/static (no shell, no pgrep)
+    # and exposes no HTTP port. Use the Asynqmon dashboard for liveness instead.
     profiles:
       - home
       - test

@@ -33,11 +33,16 @@ func main() {
 	})
 	defer client.Close()
 
+	// ExecutionEnd is intentionally computed from "now" (not "now + delay"). It is
+	// a drop-dead wall-clock deadline: even if the first run is delayed, processing
+	// stops by this absolute time. To extend the window when using --delay, pass a
+	// larger --duration.
 	executionEnd := time.Now().Add(*duration).Format(time.RFC3339)
+	shouldNotify := *notify
 	payload := models.Payload{
 		Game:         models.Game{ID: *gameID},
 		ExecutionEnd: &executionEnd,
-		ShouldNotify: notify,
+		ShouldNotify: &shouldNotify,
 	}
 
 	task, err := tasks.NewWatchGameUpdatesTask(payload)

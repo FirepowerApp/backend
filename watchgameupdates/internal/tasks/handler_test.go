@@ -54,8 +54,11 @@ func TestProcessTask_InvalidPayload(t *testing.T) {
 	task := asynq.NewTask(TypeWatchGameUpdates, []byte("invalid-json"))
 
 	err := h.ProcessTask(context.Background(), task)
-	if err == nil {
-		t.Error("Expected error for invalid payload, got nil")
+	if err != nil {
+		t.Errorf("Expected nil error (poison pill should be dropped), got: %v", err)
+	}
+	if enqueuer.taskCount() != 0 {
+		t.Errorf("Expected 0 enqueued tasks for invalid payload, got %d", enqueuer.taskCount())
 	}
 }
 
@@ -99,8 +102,11 @@ func TestProcessTask_InvalidExecutionEndFormat(t *testing.T) {
 	task := asynq.NewTask(TypeWatchGameUpdates, data)
 
 	err := h.ProcessTask(context.Background(), task)
-	if err == nil {
-		t.Error("Expected error for invalid execution end format, got nil")
+	if err != nil {
+		t.Errorf("Expected nil error (poison pill should be dropped), got: %v", err)
+	}
+	if enqueuer.taskCount() != 0 {
+		t.Errorf("Expected 0 enqueued tasks for invalid execution end, got %d", enqueuer.taskCount())
 	}
 }
 

@@ -505,7 +505,7 @@ Update environment variables for production:
 
 1. Start development environment:
    ```bash
-   make home
+   make live
    ```
 
 2. Make code changes in your editor
@@ -513,21 +513,21 @@ Update environment variables for production:
 3. Rebuild and restart:
    ```bash
    # Rebuild and restart all services
-   podman-compose --profile home up -d --build
+   podman-compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
 
    # Or use make
    make stop
-   make home
+   make live
    ```
 
 4. View logs to verify changes:
    ```bash
-   make logs-backend
+   make logs
    ```
 
 5. Test your changes:
    ```bash
-   make test
+   cd watchgameupdates && go test ./...
    ```
 
 ### Adding New Features
@@ -541,9 +541,9 @@ Update environment variables for production:
 
 ## Legacy Scripts
 
-The following shell scripts are still available for reference but Docker Compose + Makefile is the recommended approach:
+The following shell scripts are still available for reference but Podman Compose + Makefile is the recommended approach:
 
-- `setup-local.sh` - Legacy setup script (use `make setup && make home` instead)
+- `setup-local.sh` - Legacy setup script (use `make live` or `make emulator` instead)
 
 ## Contributing
 

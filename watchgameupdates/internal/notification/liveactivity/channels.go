@@ -7,10 +7,10 @@ package liveactivity
 // Teams with an empty string are skipped silently at push time — the backend
 // will still push to the other team in the game if its channel ID is populated.
 var teamChannels = map[string]string{
-	"ANA": "",
+	"ANA": "PHP5yU/pEfEAAMK1EJkzxg==",
 	"BOS": "",
-	"BUF": "",
-	"CAR": "",
+	"BUF": "iqg6AFASEfEAAL4dEtalNQ==",
+	"CAR": "5GIeaFVyEfEAAObg6VLmpQ==",
 	"CBJ": "",
 	"CGY": "",
 	"CHI": "",

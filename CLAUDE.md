@@ -36,9 +36,9 @@ When making changes, ensure:
 **Prerequisites:** Go 1.23.3+, Docker, Make
 
 ```bash
-make setup   # One-time setup: check deps, pull images, download Go modules
-make home    # Start with live NHL/MoneyPuck APIs
-make stop    # Stop all services
+make live      # Start with live NHL/MoneyPuck APIs (.env.home)
+make emulator  # Start with mock game data emulator (.env.local)
+make stop      # Stop all services
 ```
 
 ## Common Commands
@@ -46,8 +46,9 @@ make stop    # Stop all services
 ### Building
 
 ```bash
-make build            # Build all binaries
-make build-backend    # Build backend only
+go run build.go -target watchgameupdates
+go run build.go -target localCloudTasksTest
+# Binaries are output to ./bin/
 ```
 
 ### Testing
@@ -58,26 +59,19 @@ go test ./...
 go test -v -cover ./...
 go test -v ./internal/services   # Specific package
 
-# Integration tests
-make test                        # Full suite with mock APIs
-make test LOCAL_MOCK=true        # Use locally-built mock API image
+# Integration tests via scheduler
+make schedule-test                # Full system with mock APIs
+make schedule                     # Full system with live NHL data
+make schedule-team TEAM=TOR       # Single team against running emulator
 ```
 
 ### Running Locally
 
 ```bash
-make home              # Start with live APIs (development)
-make test-containers   # Start with mock APIs (testing)
-make logs              # View container logs
-make clean             # Remove containers
-```
-
-### Diagnostics
-
-```bash
-make doctor       # Run diagnostics
-make port-check   # Check port availability
-make check-deps   # Verify Go and Docker
+make live      # Backend + tasks emulator, live APIs
+make emulator  # Backend + tasks emulator + mock NHL/MoneyPuck APIs
+make logs      # Follow container logs
+make stop      # Stop all containers
 ```
 
 ## Architecture

@@ -26,23 +26,25 @@ type MessageSender interface {
 
 // Scheduler fetches the NHL schedule and enqueues game tracking tasks.
 type Scheduler struct {
-	fetcher         schedule.ScheduleFetcher
-	queue           TaskEnqueuer
-	gameMaxDuration time.Duration
-	shouldNotify    bool
-	teamFilter      string
-	notifier        MessageSender
+	fetcher          schedule.ScheduleFetcher
+	queue            TaskEnqueuer
+	gameMaxDuration  time.Duration
+	shouldNotify     bool
+	teamFilter       string
+	notifier         MessageSender
+	includeLiveGames bool
 }
 
 // New creates a new Scheduler.
-func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilter string, notifier MessageSender) *Scheduler {
+func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilter string, notifier MessageSender, includeLiveGames bool) *Scheduler {
 	return &Scheduler{
-		fetcher:         fetcher,
-		queue:           q,
-		gameMaxDuration: time.Duration(gameMaxDurationHours) * time.Hour,
-		shouldNotify:    shouldNotify,
-		teamFilter:      teamFilter,
-		notifier:        notifier,
+		fetcher:          fetcher,
+		queue:            q,
+		gameMaxDuration:  time.Duration(gameMaxDurationHours) * time.Hour,
+		shouldNotify:     shouldNotify,
+		teamFilter:       teamFilter,
+		notifier:         notifier,
+		includeLiveGames: includeLiveGames,
 	}
 }
 
@@ -71,9 +73,15 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			continue
 		}
 
-		if game.GameState != "FUT" && game.GameState != "PRE" {
+		isLive := game.GameState == "LIVE"
+		if game.GameState != "FUT" && game.GameState != "PRE" && !isLive {
 			log.Printf("Skipping game %d (%s vs %s) - state is %s, not FUT or PRE",
 				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, game.GameState)
+			continue
+		}
+		if isLive && !s.includeLiveGames {
+			log.Printf("Skipping game %d (%s vs %s) - state is LIVE (set INCLUDE_LIVE_GAMES=true to monitor)",
+				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev)
 			continue
 		}
 
@@ -83,7 +91,15 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			continue
 		}
 
-		executionEnd := startTime.Add(s.gameMaxDuration).Format(time.RFC3339)
+		// For live games, deliver immediately and set executionEnd from now.
+		deliverAt := startTime
+		executionEndBase := startTime
+		if isLive {
+			now := time.Now()
+			deliverAt = now
+			executionEndBase = now
+		}
+		executionEnd := executionEndBase.Add(s.gameMaxDuration).Format(time.RFC3339)
 
 		payload := models.Payload{
 			Game: models.Game{
@@ -97,7 +113,7 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			ShouldNotify: &s.shouldNotify,
 		}
 
-		if err := s.queue.Enqueue(ctx, payload, startTime); err != nil {
+		if err := s.queue.Enqueue(ctx, payload, deliverAt); err != nil {
 			log.Printf("Failed to enqueue task for game %d: %v", game.ID, err)
 			continue
 		}

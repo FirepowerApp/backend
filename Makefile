@@ -7,8 +7,9 @@
 #   make logs      - Follow logs from running containers
 #   make schedule  - Start full system and run scheduler with live NHL data
 #   make schedule-test - Start full system and run scheduler with test data
+#   make schedule-team TEAM=TRI - Run scheduler for a single team against an already-running emulator
 
-.PHONY: help live emulator stop logs schedule schedule-test
+.PHONY: help live emulator stop logs schedule schedule-test schedule-team
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -52,6 +53,12 @@ schedule: ## Start full system and run scheduler with live NHL data
 	@printf "  Backend:        http://localhost:8080\n"
 	@printf "  Tasks emulator: http://localhost:8123\n"
 	@printf "View logs: make logs  |  Stop: make stop\n"
+
+schedule-team: ## Run scheduler for one team against running emulator (usage: make schedule-team TEAM=TOR)
+	@if [ -z "$(TEAM)" ]; then printf "Error: TEAM is required. Usage: make schedule-team TEAM=TOR\n"; exit 1; fi
+	@printf "$(BLUE)[INFO]$(NC) Running scheduler for team $(TEAM)...\n"
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml run --rm -e TEAM_FILTER=$(TEAM) scheduler
+	@printf "$(GREEN)[OK]$(NC) Scheduler finished for $(TEAM)\n"
 
 schedule-test: ## Start full system and run scheduler with test data
 	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"

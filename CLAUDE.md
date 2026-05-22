@@ -36,9 +36,9 @@ When making changes, ensure:
 **Prerequisites:** Go 1.23.3+, Podman 5.0+ and podman-compose, Make
 
 ```bash
-make live    # Start with live NHL/MoneyPuck APIs
-make stop    # Stop all services
-make logs    # View container logs
+make live      # Start with live NHL/MoneyPuck APIs (.env.home)
+make emulator  # Start with mock game data emulator (.env.local)
+make stop      # Stop all services
 ```
 
 ## Common Commands
@@ -46,9 +46,9 @@ make logs    # View container logs
 ### Building
 
 ```bash
-# Build Go binaries locally (no container required)
-go run build.go -all         # Build all binaries to ./bin/
 go run build.go -target watchgameupdates
+go run build.go -target localCloudTasksTest
+# Binaries are output to ./bin/
 ```
 
 ### Testing
@@ -59,20 +59,22 @@ go test ./...
 go test -v -cover ./...
 go test -v ./internal/services   # Specific package
 
-# Integration tests (full stack with mock APIs)
-make emulator    # Start backend + mock APIs
-make stop        # Stop when done
+# Integration tests via scheduler
+make schedule-test                # Full system with mock APIs
+make schedule                     # Full system with live NHL data
+make schedule-team TEAM=TOR       # Single team against running emulator
 ```
 
 ### Running Locally
 
 ```bash
-make live              # Start with live APIs (development)
-make emulator          # Start with mock APIs (testing)
-make logs              # View container logs
+make live              # Backend + tasks emulator, live APIs
+make emulator          # Backend + tasks emulator + mock NHL/MoneyPuck APIs
+make logs              # Follow container logs
 make stop              # Stop all containers
 make schedule          # Start with scheduler (live data)
 make schedule-test     # Start with scheduler (mock data)
+make schedule-team TEAM=TOR  # Run scheduler for one team
 ```
 
 ## Architecture

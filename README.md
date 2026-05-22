@@ -11,11 +11,11 @@ A Go-based backend service for tracking and managing NHL game updates using Goog
 ## Quick Start
 
 ```bash
-# One-time setup: install dependencies and pull images
-make setup
+# Start with live NHL/MoneyPuck APIs (.env.home)
+make live
 
-# Start home environment (connects to live NHL/MoneyPuck APIs)
-make home
+# Or start with the mock game data emulator (.env.local)
+make emulator
 
 # View logs
 make logs
@@ -27,6 +27,8 @@ make stop
 Your services will be available at:
 - Backend: http://localhost:8080
 - Cloud Tasks Emulator: http://localhost:8123
+- Mock NHL API (emulator mode only): http://localhost:8125
+- Mock MoneyPuck API (emulator mode only): http://localhost:8124
 
 ## Project Structure
 
@@ -44,8 +46,9 @@ backend/
 │   ├── config/              # Configuration management
 │   └── Dockerfile           # Container definition
 ├── localCloudTasksTest/     # Test client for Cloud Tasks
-├── scripts/                 # Utility scripts
-├── docker-compose.yml       # Service orchestration
+├── docker-compose.yml       # Base compose definition
+├── docker-compose.live.yml  # Overlay for live APIs
+├── docker-compose.emulator.yml # Overlay for mock APIs
 ├── Makefile                 # Development commands
 └── README.md                # This file
 ```
@@ -57,56 +60,39 @@ backend/
 Run `make help` to see all available commands:
 
 ```bash
-# Setup & Prerequisites
-make check-deps          # Check Go and Docker installation
-make setup               # Initial setup (one-time)
-make pull                # Pull latest Docker images
-
-# Development
-make home                 # Start home environment (live APIs)
-make watch TEAM=COL      # Live e2e test: schedule today's real game and tail logs
-make test-containers     # Start test environment (mock APIs)
-make test                # Run full automated test suite
-
-# Container Management
-make status              # Show container status
-make logs                # View all logs
-make logs-backend        # View backend logs only
-make stop                # Stop containers
-make clean               # Remove containers and cleanup
-
-# Building
-make build               # Build all Go binaries
-make build-backend       # Build backend binary only
-
-# Troubleshooting
-make doctor              # Run diagnostic checks
-make port-check          # Check port availability
+make live              # Start backend + tasks emulator with live APIs (.env.home)
+make emulator          # Start backend + tasks emulator + mock game data APIs (.env.local)
+make stop              # Stop all running containers
+make logs              # Follow logs from running containers
+make schedule          # Start full system and run scheduler with live NHL data
+make schedule-test     # Start full system and run scheduler with mock data
+make schedule-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run scheduler for one team
+make watch TEAM=COL    # Live e2e test: schedule today's real game and tail logs
 ```
 
 ### Environment Modes
 
 The system supports two environment modes:
 
-#### Home Mode (Live APIs)
+#### Live Mode
 Uses real NHL and MoneyPuck APIs for development and testing with live data.
 
 ```bash
-make home
+make live
 ```
 
 Configuration: `watchgameupdates/.env.home`
 
-#### Test Mode (Mock APIs)
-Uses mock APIs for isolated testing without external dependencies.
+#### Emulator Mode (Mock APIs)
+Pulls the `blnelson/firepowermockdataserver:latest` image and runs the stack against mock NHL and MoneyPuck endpoints. Useful for offline development and reproducible tests.
 
 ```bash
-make test-containers
+make emulator
 ```
 
 Configuration: `watchgameupdates/.env.local`
 
-**Using a Locally Built Mock API:**
+**Using a Locally Built Mock API**
 
 If you're developing changes to the gameDataEmulator alongside backend changes, build the emulator image locally from your branch and start the stack directly — bypassing the `docker pull` that `make emulator` and `make schedule-test` run first.
 
@@ -165,37 +151,31 @@ Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. T
 
 ## Testing
 
-### Automated Integration Tests
+### Integration Testing with the Scheduler
 
-Run the complete test suite:
+Run the full system end-to-end against mock data:
 
 ```bash
-make test
+make schedule-test
 ```
 
-This will:
-1. Start all required containers (backend, cloud tasks emulator, mock APIs)
-2. Run the test sequence
-3. Monitor logs for completion
-4. Report results and stop test containers
+This pulls the mock data emulator, starts the backend + Cloud Tasks emulator + mock APIs, and runs the scheduler to seed tasks. To run it against live NHL data instead, use `make schedule`.
+
+To target a single team against an already-running emulator (e.g. after `make emulator`):
+
+```bash
+make schedule-team TEAM=TOR
+```
 
 ### Manual Testing
 
-Start the test environment and run tests manually:
+Start the emulator environment and drive it manually:
 
 ```bash
-# Start containers
-make test-containers
+make emulator
 
-# Or use a locally built mock API image
-make test-containers LOCAL_MOCK=true
-
-# In another terminal, run test client
-cd localCloudTasksTest
-./localCloudTasksTest
-
-# View logs
-make logs-backend
+# In another terminal, follow logs
+make logs
 
 # Stop when done
 make stop
@@ -289,19 +269,20 @@ Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Resch
 
 ### Direct Docker Compose Usage
 
-If you prefer using Docker Compose directly:
+The Makefile targets are thin wrappers over `docker compose`. To run them directly:
 
 ```bash
-# Start home environment
-docker compose --profile home up -d
+# Live APIs (equivalent to `make live`)
+docker compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
 
-# Start test environment
-docker compose --profile test up -d
+# Mock APIs (equivalent to `make emulator`)
+docker compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
 
-# View logs
+# With scheduler (equivalent to `make schedule` / `make schedule-test`)
+docker compose -f docker-compose.yml -f docker-compose.live.yml --profile scheduler up --build -d
+
+# View logs / stop
 docker compose logs -f
-
-# Stop all services
 docker compose down
 ```
 
@@ -310,40 +291,10 @@ docker compose down
 Build Go binaries without Docker:
 
 ```bash
-# Build all binaries
-make build
-
-# Build specific target
 go run build.go -target watchgameupdates
 go run build.go -target localCloudTasksTest
 
 # Binaries are output to ./bin/
-```
-
-### Manual Container Setup
-
-For manual Docker setup without Docker Compose:
-
-```bash
-# Create network
-docker network create net
-
-# Start Cloud Tasks emulator
-docker pull ghcr.io/aertje/cloud-tasks-emulator:latest
-docker run -d --name cloudtasks-emulator --network net -p 8123:8123 \
-  ghcr.io/aertje/cloud-tasks-emulator:latest --host=0.0.0.0
-
-# Build and run backend
-cd watchgameupdates
-docker build -t watchgameupdates .
-docker run -d -p 8080:8080 --name watchgameupdates --network net \
-  --env-file .env.home watchgameupdates
-cd ..
-
-# Create Cloud Tasks queue
-cd localCloudTasksTest
-./localCloudTasksTest
-cd ..
 ```
 
 ## Troubleshooting
@@ -351,72 +302,40 @@ cd ..
 ### Common Issues
 
 **Port already in use**
-```bash
-# Check what's using the port
-make port-check
 
-# Stop conflicting containers
-make clean
+Stop the running stack and check what's holding the port:
+
+```bash
+make stop
+lsof -i :8080
+lsof -i :8123
 ```
 
 **Services won't start**
-```bash
-# Run diagnostics
-make doctor
 
+```bash
 # Check Docker is running
 docker info
 
 # View service logs
 make logs
+
+# Inspect container state
+docker compose ps
 ```
 
 **Image pull failures**
 
-The Makefile includes automatic retry logic with exponential backoff (2s, 4s, 8s, 16s delays). If pulls continue to fail:
-
 ```bash
-# Manually pull images
 docker pull ghcr.io/aertje/cloud-tasks-emulator:latest
-
-# Or retry with make
-make pull
+docker pull blnelson/firepowermockdataserver:latest
 ```
 
-**Container health check failures**
-
-Services have health checks with 30 retries (up to 150 seconds). If services still fail:
+**Test endpoints manually**
 
 ```bash
-# Check service status
-make status
-
-# View detailed logs
-make logs
-
-# Test endpoints manually
 curl http://localhost:8080
 curl http://localhost:8123
-```
-
-### Debugging
-
-```bash
-# View all container logs
-make logs
-
-# View specific service logs
-make logs-backend
-make logs-cloudtasks
-
-# Get a shell in the backend container
-make shell-backend
-
-# Check container status
-docker compose ps
-
-# Inspect container details
-docker inspect watchgameupdates
 ```
 
 ### Clean Restart
@@ -424,12 +343,9 @@ docker inspect watchgameupdates
 If you encounter persistent issues:
 
 ```bash
-# Stop and remove everything
-make clean-all
-
-# Restart from scratch
-make setup
-make home
+make stop
+docker compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml down --remove-orphans
+make live   # or `make emulator`
 ```
 
 ## API Reference
@@ -498,29 +414,27 @@ Update environment variables for production:
 
 1. Start development environment:
    ```bash
-   make home
+   make live   # or `make emulator` for offline mock data
    ```
 
 2. Make code changes in your editor
 
 3. Rebuild and restart:
    ```bash
-   # Rebuild and restart all services
-   docker compose --profile home up -d --build
-
-   # Or use make
    make stop
-   make home
+   make live
    ```
+
+   The compose `build:` directive rebuilds the backend image from local source on each `up --build`.
 
 4. View logs to verify changes:
    ```bash
-   make logs-backend
+   make logs
    ```
 
 5. Test your changes:
    ```bash
-   make test
+   make schedule-test
    ```
 
 ### Adding New Features
@@ -532,19 +446,13 @@ Update environment variables for production:
 5. Write tests alongside your code
 6. Update environment variables if needed
 
-## Legacy Scripts
-
-The following shell scripts are still available for reference but Docker Compose + Makefile is the recommended approach:
-
-- `setup-local.sh` - Legacy setup script (use `make setup && make home` instead)
-
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Run tests: `make test`
-5. Ensure code builds: `make build`
+4. Run unit tests: `cd watchgameupdates && go test ./...`
+5. Verify the stack still boots: `make emulator`
 6. Submit a pull request
 
 ### Code Style
@@ -562,6 +470,5 @@ The following shell scripts are still available for reference but Docker Compose
 
 For issues and questions:
 - Check the Troubleshooting section above
-- Run `make doctor` for diagnostics
 - Review container logs with `make logs`
 - Open an issue on GitHub

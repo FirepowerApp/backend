@@ -7,7 +7,7 @@
 #   make logs      - Follow logs from running containers
 #   make schedule  - Start full system and run scheduler with live NHL data
 #   make schedule-test - Start full system and run scheduler with test data
-#   make schedule-team TEAM=TRI - Run scheduler for a single team against an already-running emulator
+#   make schedule-team TEAM=TRI [DATE=YYYY-MM-DD] - Run scheduler for a single team (DATE overrides UTC default)
 
 TEAM ?= COL
 
@@ -69,10 +69,14 @@ watch: ## E2E live test for a team: schedules today's real game and follows logs
 	@printf "$(BLUE)[TIP]$(NC) Stop with: make stop\n"
 	@docker compose -f docker-compose.yml -f docker-compose.watch.yml logs -f
 
-schedule-team: ## Run scheduler for one team against running emulator (usage: make schedule-team TEAM=TOR)
+schedule-team: ## Run scheduler for one team (usage: make schedule-team TEAM=TOR [DATE=2026-05-21])
 	@if [ -z "$(TEAM)" ]; then printf "Error: TEAM is required. Usage: make schedule-team TEAM=TOR\n"; exit 1; fi
 	@printf "$(BLUE)[INFO]$(NC) Running scheduler for team $(TEAM)...\n"
-	@docker compose -f docker-compose.yml -f docker-compose.live.yml run --rm -e TEAM_FILTER=$(TEAM) -e INCLUDE_LIVE_GAMES=true scheduler
+	@docker compose -f docker-compose.yml -f docker-compose.live.yml run --rm \
+	  -e TEAM_FILTER=$(TEAM) \
+	  -e INCLUDE_LIVE_GAMES=true \
+	  $(if $(DATE),-e SCHEDULE_DATE=$(DATE),) \
+	  scheduler
 	@printf "$(GREEN)[OK]$(NC) Scheduler finished for $(TEAM)\n"
 
 schedule-test: ## Start full system and run scheduler with test data

@@ -72,7 +72,7 @@ watch: ## E2E live test for a team: schedules today's real game and follows logs
 schedule-team: ## Run scheduler for one team (usage: make schedule-team TEAM=TOR [DATE=2026-05-21])
 	@if [ -z "$(TEAM)" ]; then printf "Error: TEAM is required. Usage: make schedule-team TEAM=TOR\n"; exit 1; fi
 	@printf "$(BLUE)[INFO]$(NC) Running scheduler for team $(TEAM)...\n"
-	@docker compose -f docker-compose.yml -f docker-compose.live.yml run --rm \
+	@docker compose -f docker-compose.yml -f docker-compose.live.yml run --rm --build \
 	  -e TEAM_FILTER=$(TEAM) \
 	  -e INCLUDE_LIVE_GAMES=true \
 	  $(if $(DATE),-e SCHEDULE_DATE=$(DATE),) \

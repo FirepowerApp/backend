@@ -10,17 +10,17 @@
           "gameState": "FUT",
           "gameType": 2,
           "homeTeam": {
-            "id": 10,
+            "id": 21,
             "commonName": {
-              "default": "Maple Leafs"
+              "default": "Avalanche"
             },
             "placeName": {
-              "default": "Toronto"
+              "default": "Colorado"
             },
             "placeNameWithPreposition": {
-              "default": "Toronto"
+              "default": "Colorado"
             },
-            "abbrev": "TOR"
+            "abbrev": "COL"
           },
           "awayTeam": {
             "id": 8,
@@ -28,11 +28,10 @@
               "default": "Canadiens"
             },
             "placeName": {
-              "default": "Montr\u00e9al"
+              "default": "Montréal"
             },
             "placeNameWithPreposition": {
-              "default": "Montr\u00e9al",
-              "fr": "de Montr\u00e9al"
+              "default": "Montréal"
             },
             "abbrev": "MTL"
           }

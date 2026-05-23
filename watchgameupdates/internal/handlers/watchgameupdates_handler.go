@@ -63,6 +63,9 @@ func WatchGameUpdatesHandler(
 
 		// Populate game state (period/time) from play-by-play data
 		gameData["gameState"] = formatGameState(lastPlay)
+		gameData["homeTeamAbbrev"] = payload.Game.HomeTeam.Abbrev
+		gameData["awayTeamAbbrev"] = payload.Game.AwayTeam.Abbrev
+		gameData["lastPlayType"] = lastPlay.TypeDescKey
 
 		if lastPlay.TypeDescKey == "game-end" {
 			homeGoals, homeGOK := gameData["homeTeamGoals"]

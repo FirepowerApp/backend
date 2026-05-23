@@ -40,7 +40,9 @@ backend/
 │   │   ├── handlers/        # HTTP handlers
 │   │   ├── services/        # Business logic
 │   │   ├── tasks/           # Cloud Tasks integration
-│   │   └── models/          # Data models
+│   │   ├── models/          # Data models
+│   │   └── notification/    # Discord and LiveActivity (APNs) notifiers
+│   │       └── liveactivity/ # iOS Live Activity APNs broadcast push
 │   ├── config/              # Configuration management
 │   └── Dockerfile           # Container definition
 ├── localCloudTasksTest/     # Test client for Cloud Tasks
@@ -64,7 +66,8 @@ make stop              # Stop all running containers
 make logs              # Follow logs from running containers
 make schedule          # Start full system and run scheduler with live NHL data
 make schedule-test     # Start full system and run scheduler with mock data
-make schedule-team TEAM=TOR  # Run scheduler for one team against running emulator
+make schedule-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run scheduler for one team
+make watch TEAM=COL    # Live e2e test: schedule today's real game and tail logs
 ```
 
 ### Environment Modes
@@ -129,6 +132,7 @@ CLOUD_TASKS_EMULATOR_HOST=cloudtasks-emulator:8123
 PLAYBYPLAY_API_BASE_URL=http://mockdataapi-testserver-1:8125
 STATS_API_BASE_URL=http://mockdataapi-testserver-1:8124
 DISCORD_BOT_TOKEN=your_bot_token_here
+DISCORD_CHANNEL_ID=your_channel_id_here
 ```
 
 **`.env.home`** - Development environment with live APIs
@@ -138,13 +142,14 @@ CLOUD_TASKS_EMULATOR_HOST=cloudtasks-emulator:8123
 PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
 STATS_API_BASE_URL=https://moneypuck.com
 DISCORD_BOT_TOKEN=your_bot_token_here
+DISCORD_CHANNEL_ID=your_channel_id_here
 MESSAGE_INTERVAL_SECONDS=60          # How often to poll during active play (default: 60)
 PERIOD_END_INTERVAL_SECONDS=1200     # How long to wait after a period ends (default: 1200 = 20min)
 ```
 
-**`.env.example`** - Template for custom configurations
+**`.env.example`** - Template for custom configurations (includes APNs vars for Live Activity)
 
-Update the `DISCORD_BOT_TOKEN` in your environment files as needed.
+Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. To enable iOS Live Activity push, set `LIVEACTIVITY_PUSH_ENABLED=true` and populate the `APNS_*` vars — see `.env.example` for the full list.
 
 **Tuning reschedule intervals:** `MESSAGE_INTERVAL_SECONDS` controls how frequently the
 handler re-checks a live game (default 60s). When a period ends, the service uses
@@ -264,6 +269,7 @@ The project uses Compose to orchestrate three main services:
 Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Reschedule/Complete
                     ↓
               Discord Notifications
+              LiveActivity APNs Push (iOS)
 ```
 
 ## Advanced Usage

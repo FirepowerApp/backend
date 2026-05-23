@@ -1,0 +1,24 @@
+# Compose override for end-to-end live testing (make watch TEAM=XXX).
+# Uses .env.local for credentials (APNs, Discord) but hits real NHL/MoneyPuck APIs
+# so the scheduler finds today's actual game for the requested team.
+#
+# TEAM_FILTER is injected by the make target: TEAM_FILTER=$(TEAM) docker compose ...
+
+services:
+  backend:
+    env_file:
+      - ./watchgameupdates/.env.local
+    environment:
+      - PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
+      - STATS_API_BASE_URL=https://moneypuck.com
+
+  scheduler:
+    env_file:
+      - ./watchgameupdates/.env.local
+    environment:
+      - PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
+      - SCHEDULE_API_BASE_URL=https://api-web.nhle.com
+      - STATS_API_BASE_URL=https://moneypuck.com
+      - HANDLER_HOST=http://backend:8080
+      - TEAM_FILTER=${TEAM_FILTER}
+      - SCHEDULER_SHOULD_NOTIFY=false

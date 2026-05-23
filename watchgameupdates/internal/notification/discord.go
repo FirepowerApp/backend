@@ -24,8 +24,10 @@ func NewDiscordNotifier(config NotifierConfig) (*DiscordNotifier, error) {
 		return nil, fmt.Errorf("DISCORD_BOT_TOKEN not found in config")
 	}
 
-	// Hardcoded channel ID as per requirements
-	channelID := "1421093651202703420"
+	channelID, exists := config.Config["DISCORD_CHANNEL_ID"]
+	if !exists || channelID == "" {
+		return nil, fmt.Errorf("DISCORD_CHANNEL_ID not found in config")
+	}
 
 	// Create Discord session
 	session, err := discordgo.New("Bot " + token)
@@ -145,6 +147,12 @@ func LoadDiscordConfigFromEnv() (NotifierConfig, error) {
 		return config, fmt.Errorf("DISCORD_BOT_TOKEN environment variable is required")
 	}
 
+	channelID := os.Getenv("DISCORD_CHANNEL_ID")
+	if channelID == "" {
+		return config, fmt.Errorf("DISCORD_CHANNEL_ID environment variable is required")
+	}
+
 	config.Config["DISCORD_BOT_TOKEN"] = token
+	config.Config["DISCORD_CHANNEL_ID"] = channelID
 	return config, nil
 }

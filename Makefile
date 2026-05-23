@@ -7,9 +7,11 @@
 #   make logs      - Follow logs from running containers
 #   make schedule  - Start full system and run scheduler with live NHL data
 #   make schedule-test - Start full system and run scheduler with test data
-#   make schedule-team TEAM=TRI - Run scheduler for a single team against an already-running emulator
+#   make schedule-team TEAM=TRI [DATE=YYYY-MM-DD] - Run scheduler for a single team (DATE overrides UTC default)
 
-.PHONY: help live emulator stop logs schedule schedule-test schedule-team
+TEAM ?= COL
+
+.PHONY: help live emulator stop logs schedule schedule-test watch schedule-team
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -38,7 +40,7 @@ emulator: ## Pull game data emulator from registry and start all components (.en
 	@printf "View logs: make logs  |  Stop: make stop\n"
 
 stop: ## Stop all running containers
-	@podman-compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml down 2>/dev/null || true
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml -f docker-compose.watch.yml down 2>/dev/null || true
 	@printf "$(GREEN)[OK]$(NC) Containers stopped\n"
 
 logs: ## Follow logs from running containers
@@ -54,10 +56,29 @@ schedule: ## Start full system and run scheduler with live NHL data
 	@printf "  Tasks emulator: http://localhost:8123\n"
 	@printf "View logs: make logs  |  Stop: make stop\n"
 
-schedule-team: ## Run scheduler for one team against running emulator (usage: make schedule-team TEAM=TOR)
+watch: ## E2E live test for a team: schedules today's real game and follows logs (e.g. make watch TEAM=COL)
+	@printf "$(BLUE)[INFO]$(NC) Starting backend + Cloud Tasks emulator...\n"
+	@podman-compose -f docker-compose.yml -f docker-compose.watch.yml up --build -d
+	@printf "$(BLUE)[INFO]$(NC) Waiting for services...\n"
+	@until nc -z localhost 8080 2>/dev/null; do sleep 1; done
+	@printf "$(BLUE)[INFO]$(NC) Scheduling live game for team: $(TEAM)\n"
+	@TEAM_FILTER=$(TEAM) podman-compose \
+	  -f docker-compose.yml \
+	  -f docker-compose.watch.yml \
+	  --profile scheduler \
+	  run --rm scheduler
+	@printf "$(GREEN)[OK]$(NC) Game scheduled — following logs (look for 'APNs push: channel='):\n"
+	@printf "$(BLUE)[TIP]$(NC) Stop with: make stop\n"
+	@podman-compose -f docker-compose.yml -f docker-compose.watch.yml logs --follow backend
+
+schedule-team: ## Run scheduler for one team (usage: make schedule-team TEAM=TOR [DATE=2026-05-21])
 	@if [ -z "$(TEAM)" ]; then printf "Error: TEAM is required. Usage: make schedule-team TEAM=TOR\n"; exit 1; fi
 	@printf "$(BLUE)[INFO]$(NC) Running scheduler for team $(TEAM)...\n"
-	@podman-compose -f docker-compose.yml -f docker-compose.live.yml run --rm -e TEAM_FILTER=$(TEAM) scheduler
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml run --rm \
+	  -e TEAM_FILTER=$(TEAM) \
+	  -e INCLUDE_LIVE_GAMES=true \
+	  $(if $(DATE),-e SCHEDULE_DATE=$(DATE),) \
+	  scheduler
 	@printf "$(GREEN)[OK]$(NC) Scheduler finished for $(TEAM)\n"
 
 schedule-test: ## Start full system and run scheduler with test data

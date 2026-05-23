@@ -24,6 +24,12 @@ type MessageSender interface {
 	SendMessage(ctx context.Context, message string)
 }
 
+const (
+	gameStateFUT  = "FUT"
+	gameStatePRE  = "PRE"
+	gameStateLIVE = "LIVE"
+)
+
 // Scheduler fetches the NHL schedule and enqueues game tracking tasks.
 type Scheduler struct {
 	fetcher          schedule.ScheduleFetcher
@@ -73,8 +79,8 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			continue
 		}
 
-		isLive := game.GameState == "LIVE"
-		if game.GameState != "FUT" && game.GameState != "PRE" && !isLive {
+		isLive := game.GameState == gameStateLIVE
+		if game.GameState != gameStateFUT && game.GameState != gameStatePRE && !isLive {
 			log.Printf("Skipping game %d (%s vs %s) - state is %s, not FUT or PRE",
 				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, game.GameState)
 			continue

@@ -54,6 +54,13 @@ jobs:
           kubectl create secret generic app-secrets \
             --namespace=firepower \
             --from-literal=DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }} \
+            --from-literal=DISCORD_CHANNEL_ID=${{ secrets.DISCORD_CHANNEL_ID }} \
+            --from-literal=LIVEACTIVITY_PUSH_ENABLED=${{ secrets.LIVEACTIVITY_PUSH_ENABLED }} \
+            --from-literal=APNS_TEAM_ID=${{ secrets.APNS_TEAM_ID }} \
+            --from-literal=APNS_KEY_ID=${{ secrets.APNS_KEY_ID }} \
+            --from-literal=APNS_AUTH_KEY=${{ secrets.APNS_AUTH_KEY }} \
+            --from-literal=APNS_TOPIC=${{ secrets.APNS_TOPIC }} \
+            --from-literal=APNS_HOST=${{ secrets.APNS_HOST }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
       # ghcr-pull-secret is not required: GHCR packages are public

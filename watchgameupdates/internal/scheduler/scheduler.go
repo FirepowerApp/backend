@@ -106,6 +106,7 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			executionEndBase = now
 		}
 		executionEnd := executionEndBase.Add(s.gameMaxDuration).Format(time.RFC3339)
+		shouldNotify := s.shouldNotify
 
 		payload := models.Payload{
 			Game: models.Game{
@@ -116,7 +117,7 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 				AwayTeam:  game.AwayTeam,
 			},
 			ExecutionEnd: &executionEnd,
-			ShouldNotify: &s.shouldNotify,
+			ShouldNotify: &shouldNotify,
 		}
 
 		if err := s.queue.Enqueue(ctx, payload, deliverAt); err != nil {

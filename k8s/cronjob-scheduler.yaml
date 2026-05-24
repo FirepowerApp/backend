@@ -16,6 +16,9 @@ spec:
             - name: scheduler
               image: ghcr.io/firepowerapp/scheduler:${IMAGE_TAG}
               imagePullPolicy: Always
+              env:
+                - name: SCHEDULER_QUEUE
+                  value: cloudtasks
               envFrom:
                 - configMapRef:
                     name: app-config

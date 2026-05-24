@@ -8,12 +8,11 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o scheduler ./cmd/schedulegametrackers
+RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/watchgameupdates
 
 FROM gcr.io/distroless/static
 
 WORKDIR /
+COPY --from=builder /app/main .
 
-COPY --from=builder /app/scheduler .
-
-CMD ["/scheduler"]
+CMD ["/main", "-mode=worker"]

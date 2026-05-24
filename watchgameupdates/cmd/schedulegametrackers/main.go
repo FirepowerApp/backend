@@ -23,10 +23,19 @@ func main() {
 	// Create schedule fetcher (file-based or HTTP)
 	fetcher := schedule.NewScheduleFetcher(cfg.ScheduleFile, cfg.ScheduleAPIBaseURL)
 
-	// Create queue
-	taskQueue, err := queue.NewCloudTasksQueue(ctx, cfg)
-	if err != nil {
-		log.Fatalf("Failed to create task queue: %v", err)
+	// Create queue (cloudtasks or redis, selected by SCHEDULER_QUEUE env var)
+	var taskQueue scheduler.TaskEnqueuer
+	switch cfg.SchedulerQueue {
+	case "redis":
+		log.Printf("Scheduler queue: Redis (%s)", cfg.RedisAddress)
+		taskQueue = queue.NewRedisQueue(cfg)
+	default:
+		log.Printf("Scheduler queue: Cloud Tasks")
+		ctQueue, err := queue.NewCloudTasksQueue(ctx, cfg)
+		if err != nil {
+			log.Fatalf("Failed to create Cloud Tasks queue: %v", err)
+		}
+		taskQueue = ctQueue
 	}
 	defer taskQueue.Close()
 

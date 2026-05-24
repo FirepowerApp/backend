@@ -8,15 +8,18 @@
 #   make schedule      - Start full system and run scheduler with live NHL data
 #   make schedule-test - Start full system and run scheduler with test data
 #   make schedule-team TEAM=TRI [DATE=YYYY-MM-DD] - Run scheduler for a single team (DATE overrides UTC default)
-#   make redis-up      - Start Redis worker environment (Redis + Asynqmon + backend in worker mode)
-#   make redis-test    - Start Redis worker environment with mock APIs for testing
-#   make redis-stop    - Stop Redis worker environment
-#   make redis-logs    - Follow logs from the Redis worker environment
-#   make build-enqueue - Build the Redis queue enqueue CLI tool
+#   make redis-up            - Start Redis worker environment (Redis + Asynqmon + backend in worker mode)
+#   make redis-test          - Start Redis worker environment with mock APIs for testing
+#   make redis-schedule      - Start Redis environment and run scheduler with live NHL data
+#   make redis-schedule-test - Start Redis environment and run scheduler with mock data
+#   make redis-schedule-team TEAM=TOR [DATE=YYYY-MM-DD] - Run Redis scheduler for a single team
+#   make redis-stop          - Stop Redis worker environment
+#   make redis-logs          - Follow logs from the Redis worker environment
+#   make build-enqueue       - Build the Redis queue enqueue CLI tool
 
 TEAM ?= COL
 
-.PHONY: help live emulator stop logs schedule schedule-test watch schedule-team redis-up redis-test redis-stop redis-logs build-enqueue
+.PHONY: help live emulator stop logs schedule schedule-test watch schedule-team redis-up redis-test redis-schedule redis-schedule-test redis-schedule-team redis-stop redis-logs build-enqueue
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -119,6 +122,36 @@ redis-test: ## Start Redis worker environment with mock APIs for testing
 	@printf "  Redis:               localhost:6379\n"
 	@printf "  Mock NHL API:        http://localhost:8125\n"
 	@printf "  Mock MoneyPuck API:  http://localhost:8124\n"
+
+redis-schedule: ## Start Redis worker environment and run scheduler with live NHL data
+	@printf "$(BLUE)[INFO]$(NC) Starting Redis environment with scheduler (live data)...\n"
+	@podman-compose -f $(COMPOSE_REDIS) --profile scheduler up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with scheduler\n"
+	@printf "  Asynqmon dashboard: http://localhost:8980\n"
+	@printf "  Redis:              localhost:6379\n"
+	@printf "View logs: make redis-logs  |  Stop: make redis-stop\n"
+
+redis-schedule-test: ## Start Redis worker environment and run scheduler with mock data
+	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
+	@podman pull docker.io/blnelson/firepowermockdataserver:latest
+	@printf "$(BLUE)[INFO]$(NC) Starting Redis environment with scheduler (mock data)...\n"
+	@podman-compose -f $(COMPOSE_REDIS) --profile scheduler-test up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with scheduler (mock data)\n"
+	@printf "  Asynqmon dashboard:  http://localhost:8980\n"
+	@printf "  Redis:               localhost:6379\n"
+	@printf "  Mock NHL API:        http://localhost:8125\n"
+	@printf "  Mock MoneyPuck API:  http://localhost:8124\n"
+	@printf "View logs: make redis-logs  |  Stop: make redis-stop\n"
+
+redis-schedule-team: ## Run Redis scheduler for one team (usage: make redis-schedule-team TEAM=TOR [DATE=2026-05-21])
+	@if [ -z "$(TEAM)" ]; then printf "Error: TEAM is required. Usage: make redis-schedule-team TEAM=TOR\n"; exit 1; fi
+	@printf "$(BLUE)[INFO]$(NC) Running Redis scheduler for team $(TEAM)...\n"
+	@podman-compose -f $(COMPOSE_REDIS) run --rm \
+	  -e TEAM_FILTER=$(TEAM) \
+	  -e INCLUDE_LIVE_GAMES=true \
+	  $(if $(DATE),-e SCHEDULE_DATE=$(DATE),) \
+	  scheduler
+	@printf "$(GREEN)[OK]$(NC) Redis scheduler finished for $(TEAM)\n"
 
 redis-stop: ## Stop Redis worker environment
 	@podman-compose -f $(COMPOSE_REDIS) down 2>/dev/null || true

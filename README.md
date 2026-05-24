@@ -36,10 +36,11 @@ Your services will be available at:
 # Start Redis + Asynqmon + backend worker
 make redis-up
 
-# Build the enqueue CLI
-make build-enqueue
+# Option A: Enqueue today's games automatically via the scheduler
+make redis-schedule
 
-# Enqueue a game-watching task
+# Option B: Enqueue a single game manually
+make build-enqueue
 ./bin/enqueue --game=2024030411
 
 # View task queue dashboard
@@ -90,21 +91,25 @@ backend/
 Run `make help` to see all available commands:
 
 ```bash
-make live              # Start backend + tasks emulator with live APIs (.env.home)
-make emulator          # Start backend + tasks emulator + mock game data APIs (.env.local)
-make stop              # Stop all running containers
-make logs              # Follow logs from running containers
-make schedule          # Start full system and run scheduler with live NHL data
-make schedule-test     # Start full system and run scheduler with mock data
+# Cloud Tasks mode
+make live                    # Start backend + tasks emulator with live APIs (.env.home)
+make emulator                # Start backend + tasks emulator + mock game data APIs (.env.local)
+make stop                    # Stop all running containers
+make logs                    # Follow logs from running containers
+make schedule                # Start full system and run scheduler with live NHL data
+make schedule-test           # Start full system and run scheduler with mock data
 make schedule-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run scheduler for one team
-make watch TEAM=COL    # Live e2e test: schedule today's real game and tail logs
+make watch TEAM=COL          # Live e2e test: schedule today's real game and tail logs
 
-# Redis Queue (Worker Mode)
-make redis-up          # Start Redis + Asynqmon + worker backend
-make redis-test        # Start Redis test environment (with mock APIs)
-make redis-stop        # Stop Redis containers
-make redis-logs        # View Redis worker logs
-make build-enqueue     # Build the Redis enqueue CLI tool
+# Redis mode
+make redis-up                # Start Redis + Asynqmon + worker backend
+make redis-test              # Start Redis test environment (with mock APIs)
+make redis-schedule          # Start Redis environment and run scheduler with live data
+make redis-schedule-test     # Start Redis environment and run scheduler with mock data
+make redis-schedule-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run Redis scheduler for one team
+make redis-stop              # Stop Redis containers
+make redis-logs              # View Redis worker logs
+make build-enqueue           # Build the Redis enqueue CLI tool
 ```
 
 ### Environment Modes
@@ -166,15 +171,18 @@ Uses Redis as the task queue instead of Cloud Tasks. The backend runs as a long-
 # Start Redis worker environment
 make redis-up
 
-# Build the enqueue CLI and add a task
+# Option A: Enqueue today's games via the scheduler (live data)
+make redis-schedule
+
+# Option B: Enqueue a single game manually
 make build-enqueue
 ./bin/enqueue --game=2024030411 --duration=12m --notify=true
 
 # Open the Asynqmon dashboard to observe the task
 open http://localhost:8980
 
-# Start with mock APIs for testing
-make redis-test
+# Start with mock APIs for testing (includes scheduler)
+make redis-schedule-test
 ```
 
 Configuration: `watchgameupdates/.env.redis` (create from `.env.redis.example`)
@@ -236,19 +244,39 @@ polling during intermissions.
 
 ### Integration Testing with the Scheduler
 
-Run the full system end-to-end against mock data:
+The scheduler commands have equivalents for both queue backends:
+
+| Cloud Tasks | Redis | Description |
+|---|---|---|
+| `make schedule` | `make redis-schedule` | Run scheduler with live NHL data |
+| `make schedule-test` | `make redis-schedule-test` | Run scheduler with mock data |
+| `make schedule-team TEAM=TOR` | `make redis-schedule-team TEAM=TOR` | Run scheduler for one team |
+
+**Cloud Tasks (default):**
 
 ```bash
 make schedule-test
 ```
 
-This pulls the mock data emulator, starts the backend + Cloud Tasks emulator + mock APIs, and runs the scheduler to seed tasks. To run it against live NHL data instead, use `make schedule`.
-
-To target a single team against an already-running emulator (e.g. after `make emulator`):
+This pulls the mock data emulator, starts the backend + Cloud Tasks emulator + mock APIs, and runs the scheduler to seed tasks. To run against live NHL data, use `make schedule`. To target a single team against an already-running emulator:
 
 ```bash
 make schedule-team TEAM=TOR
 ```
+
+**Redis:**
+
+```bash
+make redis-schedule-test
+```
+
+This starts the Redis worker environment (Redis + Asynqmon + worker backend + mock APIs) and runs the scheduler to seed tasks. To run against live NHL data, use `make redis-schedule`. To target a single team:
+
+```bash
+make redis-schedule-team TEAM=TOR
+```
+
+Tasks enqueued by the Redis scheduler are visible in the Asynqmon dashboard at http://localhost:8980.
 
 ### Manual Testing
 

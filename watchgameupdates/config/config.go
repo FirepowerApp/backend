@@ -32,6 +32,7 @@ type Config struct {
 	SchedulerNotify      bool
 	TeamFilter           string
 	IncludeLiveGames     bool
+	SchedulerQueue       string // "cloudtasks" (default) or "redis"
 }
 
 func LoadConfig() *Config {
@@ -92,6 +93,7 @@ func LoadConfig() *Config {
 		ScheduleDate: os.Getenv("SCHEDULE_DATE"),
 		TeamFilter:       os.Getenv("TEAM_FILTER"),
 		IncludeLiveGames: os.Getenv("INCLUDE_LIVE_GAMES") == "true",
+		SchedulerQueue:   getEnvOrDefault("SCHEDULER_QUEUE", "cloudtasks"),
 		GameMaxDurationHours: func() int {
 			if val, ok := os.LookupEnv("GAME_MAX_DURATION_HOURS"); ok {
 				var intVal int

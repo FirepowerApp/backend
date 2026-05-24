@@ -2,8 +2,10 @@
 # Starts Redis, Asynqmon (web dashboard), and the backend in worker mode.
 #
 # Usage:
-#   docker compose -f docker-compose.redis.yml up
-#   docker compose -f docker-compose.redis.yml --profile test up  # include mock APIs
+#   podman-compose -f docker-compose.redis.yml up
+#   podman-compose -f docker-compose.redis.yml --profile test up         # include mock APIs
+#   podman-compose -f docker-compose.redis.yml --profile scheduler up    # include scheduler (live)
+#   podman-compose -f docker-compose.redis.yml --profile scheduler-test up  # scheduler + mock APIs
 #
 # Dashboard: http://localhost:8980
 
@@ -73,7 +75,30 @@ services:
       - test
       - default
 
-  # Mock Data API (test profile only)
+  scheduler:
+    <<: *common-settings
+    build:
+      context: ./watchgameupdates
+      dockerfile: Dockerfile.scheduler
+    image: schedulegametrackers:latest
+    environment:
+      - SCHEDULER_QUEUE=redis
+      - REDIS_ADDRESS=redis:6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+    env_file:
+      - ./watchgameupdates/.env.redis
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    restart: "no"
+    profiles:
+      - scheduler
+      - scheduler-test
+
+  # Mock Data API (test and scheduler-test profiles)
   mockdataapi:
     <<: *common-settings
     image: blnelson/firepowermockdataserver:latest
@@ -88,6 +113,7 @@ services:
       test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:8125/v1/gamecenter/test/play-by-play || exit 1"]
     profiles:
       - test
+      - scheduler-test
 
 volumes:
   redis-data:

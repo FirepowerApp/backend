@@ -23,7 +23,7 @@ help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(BLUE)%-15s$(NC) %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 live: ## Start handler and tasks queue with live game data APIs (.env.home)
-	@docker compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
 	@printf "$(GREEN)[OK]$(NC) Started\n"
 	@printf "  Backend:        http://localhost:8080\n"
 	@printf "  Tasks emulator: http://localhost:8123\n"
@@ -31,8 +31,8 @@ live: ## Start handler and tasks queue with live game data APIs (.env.home)
 
 emulator: ## Pull game data emulator from registry and start all components (.env.local)
 	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
-	@docker pull blnelson/firepowermockdataserver:latest
-	@docker compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
+	@podman pull docker.io/blnelson/firepowermockdataserver:latest
+	@podman-compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
 	@printf "$(GREEN)[OK]$(NC) Started\n"
 	@printf "  Backend:            http://localhost:8080\n"
 	@printf "  Tasks emulator:     http://localhost:8123\n"
@@ -40,15 +40,17 @@ emulator: ## Pull game data emulator from registry and start all components (.en
 	@printf "View logs: make logs  |  Stop: make stop\n"
 
 stop: ## Stop all running containers
-	@docker compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml -f docker-compose.watch.yml down 2>/dev/null || true
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml -f docker-compose.watch.yml down 2>/dev/null || true
 	@printf "$(GREEN)[OK]$(NC) Containers stopped\n"
 
 logs: ## Follow logs from running containers
-	@docker compose logs -f
+	@podman-compose -f docker-compose.yml logs --follow backend & \
+	 podman-compose -f docker-compose.yml logs --follow cloudtasks-emulator & \
+	 wait
 
 schedule: ## Start full system and run scheduler with live NHL data
 	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (live data)...\n"
-	@docker compose -f docker-compose.yml -f docker-compose.live.yml --profile scheduler up --build -d
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml --profile scheduler up --build -d
 	@printf "$(GREEN)[OK]$(NC) Started with scheduler\n"
 	@printf "  Backend:        http://localhost:8080\n"
 	@printf "  Tasks emulator: http://localhost:8123\n"
@@ -56,23 +58,23 @@ schedule: ## Start full system and run scheduler with live NHL data
 
 watch: ## E2E live test for a team: schedules today's real game and follows logs (e.g. make watch TEAM=COL)
 	@printf "$(BLUE)[INFO]$(NC) Starting backend + Cloud Tasks emulator...\n"
-	@docker compose -f docker-compose.yml -f docker-compose.watch.yml up --build -d
+	@podman-compose -f docker-compose.yml -f docker-compose.watch.yml up --build -d
 	@printf "$(BLUE)[INFO]$(NC) Waiting for services...\n"
 	@until nc -z localhost 8080 2>/dev/null; do sleep 1; done
 	@printf "$(BLUE)[INFO]$(NC) Scheduling live game for team: $(TEAM)\n"
-	@TEAM_FILTER=$(TEAM) docker compose \
+	@TEAM_FILTER=$(TEAM) podman-compose \
 	  -f docker-compose.yml \
 	  -f docker-compose.watch.yml \
 	  --profile scheduler \
 	  run --rm scheduler
 	@printf "$(GREEN)[OK]$(NC) Game scheduled — following logs (look for 'APNs push: channel='):\n"
 	@printf "$(BLUE)[TIP]$(NC) Stop with: make stop\n"
-	@docker compose -f docker-compose.yml -f docker-compose.watch.yml logs -f
+	@podman-compose -f docker-compose.yml -f docker-compose.watch.yml logs --follow backend
 
 schedule-team: ## Run scheduler for one team (usage: make schedule-team TEAM=TOR [DATE=2026-05-21])
 	@if [ -z "$(TEAM)" ]; then printf "Error: TEAM is required. Usage: make schedule-team TEAM=TOR\n"; exit 1; fi
 	@printf "$(BLUE)[INFO]$(NC) Running scheduler for team $(TEAM)...\n"
-	@docker compose -f docker-compose.yml -f docker-compose.live.yml run --rm --build \
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml run --rm \
 	  -e TEAM_FILTER=$(TEAM) \
 	  -e INCLUDE_LIVE_GAMES=true \
 	  $(if $(DATE),-e SCHEDULE_DATE=$(DATE),) \
@@ -81,9 +83,9 @@ schedule-team: ## Run scheduler for one team (usage: make schedule-team TEAM=TOR
 
 schedule-test: ## Start full system and run scheduler with test data
 	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
-	@docker pull blnelson/firepowermockdataserver:latest
+	@podman pull docker.io/blnelson/firepowermockdataserver:latest
 	@printf "$(BLUE)[INFO]$(NC) Starting full system with scheduler (test data)...\n"
-	@docker compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
+	@podman-compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
 	@printf "$(GREEN)[OK]$(NC) Started with scheduler (test data)\n"
 	@printf "  Backend:            http://localhost:8080\n"
 	@printf "  Tasks emulator:     http://localhost:8123\n"

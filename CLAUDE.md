@@ -33,7 +33,7 @@ When making changes, ensure:
 
 ## Development Setup
 
-**Prerequisites:** Go 1.23.3+, Docker, Make
+**Prerequisites:** Go 1.23.3+, Podman 5.0+ and podman-compose, Make
 
 ```bash
 make live      # Start with live NHL/MoneyPuck APIs (.env.home)
@@ -68,10 +68,14 @@ make schedule-team TEAM=TOR       # Single team against running emulator
 ### Running Locally
 
 ```bash
-make live      # Backend + tasks emulator, live APIs
-make emulator  # Backend + tasks emulator + mock NHL/MoneyPuck APIs
-make logs      # Follow container logs
-make stop      # Stop all containers
+make live              # Backend + tasks emulator, live APIs
+make emulator          # Backend + tasks emulator + mock NHL/MoneyPuck APIs
+make logs              # Follow container logs
+make stop              # Stop all containers
+make schedule          # Start with scheduler (live data)
+make schedule-test     # Start with scheduler (mock data)
+make schedule-team TEAM=TOR  # Run scheduler for one team
+make watch TEAM=COL    # E2E live test: schedule today's game and follow logs
 ```
 
 ## Architecture
@@ -105,13 +109,15 @@ Copy `.env.example` to `.env.home` or `.env.local` and populate:
 
 ```
 APP_ENV=development
-CLOUD_TASKS_EMULATOR_HOST=   # local dev only
+CLOUD_TASKS_EMULATOR_HOST=        # local dev only
 GCP_PROJECT_ID=
 GCP_LOCATION=
-PLAYBYPLAY_API_BASE_URL=     # NHL API or mock
-STATS_API_BASE_URL=          # MoneyPuck API or mock
+PLAYBYPLAY_API_BASE_URL=          # NHL API or mock
+STATS_API_BASE_URL=               # MoneyPuck API or mock
 DISCORD_BOT_TOKEN=
 DISCORD_CHANNEL_ID=          # Discord channel to post game updates
+MESSAGE_INTERVAL_SECONDS=60       # active-play polling interval (default 60)
+PERIOD_END_INTERVAL_SECONDS=1200  # post-period-end wait before next poll (default 1200)
 
 # Live Activity APNs (optional — set LIVEACTIVITY_PUSH_ENABLED=true to enable)
 LIVEACTIVITY_PUSH_ENABLED=
@@ -152,7 +158,7 @@ All commits must follow the [Conventional Commits](https://www.conventionalcommi
 
 ### Scopes (optional but encouraged)
 
-Use the affected area: `handlers`, `services`, `tasks`, `notification`, `models`, `config`, `docker`, `makefile`
+Use the affected area: `handlers`, `services`, `tasks`, `notification`, `models`, `config`, `docker`, `podman`, `makefile`
 
 ### Examples
 

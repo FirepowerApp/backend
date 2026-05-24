@@ -1,4 +1,4 @@
-# Docker Compose override for end-to-end live testing (make watch TEAM=XXX).
+# Compose override for end-to-end live testing (make watch TEAM=XXX).
 # Uses .env.local for credentials (APNs, Discord) but hits real NHL/MoneyPuck APIs
 # so the scheduler finds today's actual game for the requested team.
 #

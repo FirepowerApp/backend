@@ -5,7 +5,7 @@ A Go-based backend service for tracking and managing NHL game updates using Goog
 ## Prerequisites
 
 - **Go 1.23.3+** - [Install Go](https://go.dev/doc/install)
-- **Docker** - [Install Docker](https://docs.docker.com/get-docker/)
+- **Podman 5.0+** - [Install Podman](https://podman.io/docs/installation) (macOS: `brew install podman podman-compose`)
 - **Make** - Usually pre-installed on Linux/macOS
 
 ## Quick Start
@@ -94,23 +94,23 @@ Configuration: `watchgameupdates/.env.local`
 
 **Using a Locally Built Mock API**
 
-If you're developing changes to the gameDataEmulator alongside backend changes, build the emulator image locally from your branch and start the stack directly — bypassing the `docker pull` that `make emulator` and `make schedule-test` run first.
+If you're developing changes to the gameDataEmulator alongside backend changes, build the emulator image locally from your branch and start the stack directly — bypassing the `podman pull` that `make emulator` and `make schedule-test` run first.
 
 ```bash
 # 1. Build the emulator image from your local branch
 cd ../gameDataEmulator
 git checkout your-branch
-docker build -t blnelson/firepowermockdataserver:latest .
+podman build -t docker.io/blnelson/firepowermockdataserver:latest .
 
 # 2. Start the backend + mock API stack (no pull step)
 cd ../backend
-docker compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
+podman-compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
 ```
 
 To also run the full end-to-end sequence with the scheduler (which seeds the queue and triggers notifications):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
+podman-compose -f docker-compose.yml -f docker-compose.emulator.yml --profile scheduler up --build -d
 ```
 
 This is equivalent to `make schedule-test` but uses your locally built emulator image instead of pulling the latest from the registry. Services will be available at:
@@ -119,7 +119,7 @@ This is equivalent to `make schedule-test` but uses your locally built emulator 
 - Mock NHL API: http://localhost:8125
 - Mock MoneyPuck API: http://localhost:8124
 
-The reason only the emulator needs a separate build step is that the backend is always built from local source by Docker Compose (via the `build:` directive in `docker-compose.yml`), so it automatically reflects any local changes. The emulator, by contrast, is referenced as a pre-built image (`image: blnelson/firepowermockdataserver:latest`), so Compose just uses whatever is cached locally under that tag. The difference between this approach and `make schedule-test` is that the Makefile target runs `docker pull blnelson/firepowermockdataserver:latest` before starting the stack, which would overwrite your locally built image with the latest version from the registry. By invoking `docker compose` directly and skipping that pull, Docker uses the local image you built from your branch instead.
+The reason only the emulator needs a separate build step is that the backend is always built from local source by Compose (via the `build:` directive in `docker-compose.yml`), so it automatically reflects any local changes. The emulator, by contrast, is referenced as a pre-built image (`image: blnelson/firepowermockdataserver:latest`), so Compose just uses whatever is cached locally under that tag. The difference between this approach and `make schedule-test` is that the Makefile target runs `podman pull docker.io/blnelson/firepowermockdataserver:latest` before starting the stack, which would overwrite your locally built image with the latest version from the registry. By invoking `podman-compose` directly and skipping that pull, Podman uses the local image you built from your branch instead.
 
 ### Configuration
 
@@ -143,11 +143,18 @@ PLAYBYPLAY_API_BASE_URL=https://api-web.nhle.com
 STATS_API_BASE_URL=https://moneypuck.com
 DISCORD_BOT_TOKEN=your_bot_token_here
 DISCORD_CHANNEL_ID=your_channel_id_here
+MESSAGE_INTERVAL_SECONDS=60          # How often to poll during active play (default: 60)
+PERIOD_END_INTERVAL_SECONDS=1200     # How long to wait after a period ends (default: 1200 = 20min)
 ```
 
 **`.env.example`** - Template for custom configurations (includes APNs vars for Live Activity)
 
 Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. To enable iOS Live Activity push, set `LIVEACTIVITY_PUSH_ENABLED=true` and populate the `APNS_*` vars — see `.env.example` for the full list.
+
+**Tuning reschedule intervals:** `MESSAGE_INTERVAL_SECONDS` controls how frequently the
+handler re-checks a live game (default 60s). When a period ends, the service uses
+`PERIOD_END_INTERVAL_SECONDS` instead (default 1200s / 20 minutes) to avoid unnecessary
+polling during intermissions.
 
 ## Testing
 
@@ -231,7 +238,7 @@ cd watchgameupdates && go tool cover -html=coverage.out
 
 ### Services
 
-The project uses Docker Compose to orchestrate three main services:
+The project uses Compose to orchestrate three main services:
 
 **Cloud Tasks Emulator**
 - Emulates Google Cloud Tasks for local development
@@ -267,28 +274,28 @@ Cloud Tasks → Backend Handler → Fetch Game Data → Process Events → Resch
 
 ## Advanced Usage
 
-### Direct Docker Compose Usage
+### Direct Compose Usage
 
-The Makefile targets are thin wrappers over `docker compose`. To run them directly:
+The Makefile targets are thin wrappers over `podman-compose`. To run them directly:
 
 ```bash
 # Live APIs (equivalent to `make live`)
 docker compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
 
 # Mock APIs (equivalent to `make emulator`)
-docker compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
+podman-compose -f docker-compose.yml -f docker-compose.emulator.yml up --build -d
 
 # With scheduler (equivalent to `make schedule` / `make schedule-test`)
 docker compose -f docker-compose.yml -f docker-compose.live.yml --profile scheduler up --build -d
 
 # View logs / stop
-docker compose logs -f
-docker compose down
+podman-compose -f docker-compose.yml logs --follow backend
+podman-compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.emulator.yml down
 ```
 
 ### Building Binaries
 
-Build Go binaries without Docker:
+Build Go binaries without Podman:
 
 ```bash
 go run build.go -target watchgameupdates
@@ -314,21 +321,24 @@ lsof -i :8123
 **Services won't start**
 
 ```bash
-# Check Docker is running
-docker info
+# Check Podman is running (macOS: ensure podman machine is started)
+podman info
+
+# macOS: if podman is not reachable, initialize and start the VM
+podman machine init && podman machine start
 
 # View service logs
 make logs
 
 # Inspect container state
-docker compose ps
+podman-compose ps
 ```
 
 **Image pull failures**
 
 ```bash
-docker pull ghcr.io/aertje/cloud-tasks-emulator:latest
-docker pull blnelson/firepowermockdataserver:latest
+podman pull ghcr.io/aertje/cloud-tasks-emulator:latest
+podman pull docker.io/blnelson/firepowermockdataserver:latest
 ```
 
 **Test endpoints manually**
@@ -391,8 +401,8 @@ GET https://moneypuck.com/moneypuck/gameData/{season}/{game_id}.csv
 
 ```bash
 cd watchgameupdates
-docker build -t crashthecrease-backend .
-docker run -p 8080:8080 crashthecrease-backend
+podman build -t crashthecrease-backend .
+podman run -p 8080:8080 crashthecrease-backend
 ```
 
 ### Google Cloud Platform

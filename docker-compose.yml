@@ -19,6 +19,8 @@ services:
       - "8080:8080"
     environment:
       - PORT=8080
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       - cloudtasks-emulator
     networks:
@@ -30,6 +32,9 @@ services:
       context: ./watchgameupdates
       dockerfile: Dockerfile.scheduler
     image: schedulegametrackers:latest
+    environment:
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       - cloudtasks-emulator
       - backend

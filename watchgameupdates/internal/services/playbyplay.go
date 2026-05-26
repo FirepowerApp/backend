@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"watchgameupdates/internal/models"
@@ -20,23 +20,19 @@ func FetchPlayByPlay(gameID string) (lastPlay models.Play, maxPeriods *int) {
 	playByPlayUrl := fmt.Sprintf("%s/v1/gamecenter/%s/play-by-play", playByPlayAPIBaseURL, gameID)
 	resp, err := http.Get(playByPlayUrl)
 	if err != nil {
-		log.Printf("Failed to fetch play-by-play data: %v", err)
-		// http.Error(w, "Failed to fetch play-by-play data", http.StatusInternalServerError)
+		slog.Error("failed to fetch play-by-play data", "game_id", gameID, "error", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to fetch play-by-play data, status code: %d", resp.StatusCode)
-		// http.Error(w, "Failed to fetch play-by-play data", http.StatusInternalServerError)
+		slog.Error("play-by-play request returned non-200", "game_id", gameID, "status_code", resp.StatusCode)
 		return
 	}
 
-	// Display respnse body for debugging
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Failed to read response body: %v", err)
-		// http.Error(w, "Failed to read response body", http.StatusInternalServerError)
+		slog.Error("failed to read play-by-play response body", "game_id", gameID, "error", err)
 		return
 	}
 	var data models.PlayByPlayResponse
@@ -45,12 +41,11 @@ func FetchPlayByPlay(gameID string) (lastPlay models.Play, maxPeriods *int) {
 	}
 
 	if len(data.Plays) == 0 {
-		log.Printf("No plays found for GameID: %s", gameID)
-		// http.Error(w, "No plays found for the game", http.StatusNotFound)
+		slog.Warn("no plays found for game", "game_id", gameID)
 		return
 	}
 
 	lastPlay = data.Plays[len(data.Plays)-1]
-	log.Printf("Last play type: %s, regular season: %t", lastPlay.TypeDescKey, data.MaxPeriods != nil)
+	slog.Debug("fetched play-by-play", "game_id", gameID, "last_play_type", lastPlay.TypeDescKey, "regular_season", data.MaxPeriods != nil)
 	return lastPlay, data.MaxPeriods
 }

@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"watchgameupdates/config"
+	"watchgameupdates/internal/logger"
 	"watchgameupdates/internal/models"
 	"watchgameupdates/internal/tasks"
 
@@ -14,6 +16,8 @@ import (
 )
 
 func main() {
+	slog.SetDefault(logger.New())
+
 	gameID := flag.String("game", "", "NHL game ID to watch (required)")
 	duration := flag.Duration("duration", 12*time.Minute, "Max execution duration")
 	delay := flag.Duration("delay", 0, "Delay before first execution")
@@ -21,7 +25,8 @@ func main() {
 	flag.Parse()
 
 	if *gameID == "" {
-		log.Fatal("--game flag is required")
+		slog.Error("--game flag is required")
+		os.Exit(1)
 	}
 
 	cfg := config.LoadConfig()
@@ -47,7 +52,8 @@ func main() {
 
 	task, err := tasks.NewWatchGameUpdatesTask(payload)
 	if err != nil {
-		log.Fatalf("Failed to create task: %v", err)
+		slog.Error("failed to create task", "error", err)
+		os.Exit(1)
 	}
 
 	opts := []asynq.Option{}
@@ -57,16 +63,18 @@ func main() {
 
 	info, err := client.Enqueue(task, opts...)
 	if err != nil {
-		log.Fatalf("Failed to enqueue task: %v", err)
+		slog.Error("failed to enqueue task", "error", err)
+		os.Exit(1)
 	}
 
 	payloadJSON, _ := json.MarshalIndent(payload, "", "  ")
-	log.Printf("Task enqueued successfully:")
-	log.Printf("  ID:       %s", info.ID)
-	log.Printf("  Queue:    %s", info.Queue)
-	log.Printf("  Game:     %s", *gameID)
-	log.Printf("  Payload:  %s", payloadJSON)
+	slog.Info("task enqueued successfully",
+		"id", info.ID,
+		"queue", info.Queue,
+		"game_id", *gameID,
+		"payload", string(payloadJSON),
+	)
 	if *delay > 0 {
-		log.Printf("  Delay:    %v", *delay)
+		slog.Info("task delayed", "delay", delay.String())
 	}
 }

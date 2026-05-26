@@ -1,0 +1,54 @@
+# Local Loki stack overlay — runs Loki + Grafana UI + Alloy locally.
+# No Grafana Cloud account or credentials needed. Use for testing before
+# setting up production log shipping.
+#
+# Activate by stacking on top of your base compose file:
+#   make loki-emulator   # Mock APIs + local Loki stack
+#   make loki-live       # Live APIs + local Loki stack
+#
+# Access:
+#   Grafana UI:  http://localhost:3000  (anonymous admin, no login required)
+#   Loki API:    http://localhost:3100
+#   Alloy UI:    http://localhost:12345
+#
+# Query logs: Grafana → Explore → Loki → {service="backend"}
+
+services:
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - net
+    restart: unless-stopped
+
+  grafana-ui:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+    networks:
+      - net
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:latest
+    volumes:
+      - ./alloy/config.loki-local.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+    ports:
+      - "12345:12345"
+    depends_on:
+      - loki
+    networks:
+      - net
+    restart: unless-stopped

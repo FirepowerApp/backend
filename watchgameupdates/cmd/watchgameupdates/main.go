@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"watchgameupdates/config"
 	"watchgameupdates/internal/handlers"
+	"watchgameupdates/internal/logger"
 	"watchgameupdates/internal/models"
 	"watchgameupdates/internal/notification"
 	"watchgameupdates/internal/notification/liveactivity"
@@ -26,7 +28,7 @@ func init() {
 	var err error
 	laNotifier, err = liveactivity.New()
 	if err != nil {
-		log.Printf("LiveActivity notifier not configured (normal if not enabled): %v", err)
+		slog.Info("LiveActivity notifier not configured (normal if not enabled)", "error", err)
 	}
 }
 
@@ -64,27 +66,28 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func startHTTPMode(cfg *config.Config) {
-	log.Println("Starting in HTTP mode (Cloud Tasks)")
-
-	log.Printf("Config loaded:")
-	log.Printf("  APP_ENV:                    %s", cfg.Env)
-	log.Printf("  GCP_PROJECT_ID:             %s", cfg.ProjectID)
-	log.Printf("  GCP_LOCATION:               %s", cfg.LocationID)
-	log.Printf("  CLOUD_TASKS_QUEUE:          %s", cfg.QueueID)
-	log.Printf("  USE_TASKS_EMULATOR:         %v", cfg.UseEmulator)
-	log.Printf("  CLOUD_TASKS_EMULATOR_HOST:  %s", cfg.CloudTasksAddress)
-	log.Printf("  HANDLER_HOST:               %s", cfg.HandlerAddress)
-	log.Printf("  MESSAGE_INTERVAL_SECONDS:   %d", cfg.MessageIntervalSeconds)
-	log.Printf("  PERIOD_END_INTERVAL_SECONDS:%d", cfg.PeriodEndIntervalSeconds)
+	slog.Info("starting in HTTP mode (Cloud Tasks)")
+	slog.Info("config loaded",
+		"app_env", cfg.Env,
+		"gcp_project_id", cfg.ProjectID,
+		"gcp_location", cfg.LocationID,
+		"cloud_tasks_queue", cfg.QueueID,
+		"use_tasks_emulator", cfg.UseEmulator,
+		"cloud_tasks_emulator_host", cfg.CloudTasksAddress,
+		"handler_host", cfg.HandlerAddress,
+		"message_interval_seconds", cfg.MessageIntervalSeconds,
+		"period_end_interval_seconds", cfg.PeriodEndIntervalSeconds,
+	)
 
 	funcframework.RegisterHTTPFunction("/", httpHandler)
 	if err := funcframework.Start("8080"); err != nil {
-		log.Fatalf("Failed to start function: %v", err)
+		slog.Error("failed to start function", "error", err)
+		os.Exit(1)
 	}
 }
 
 func startWorkerMode(cfg *config.Config) {
-	log.Printf("Starting in worker mode (Redis at %s)", cfg.RedisAddress)
+	slog.Info("starting in worker mode", "redis_address", cfg.RedisAddress)
 
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     cfg.RedisAddress,
@@ -106,16 +109,16 @@ func startWorkerMode(cfg *config.Config) {
 	handler := tasks.NewWatchGameUpdatesHandler(cfg, client)
 	mux.HandleFunc(tasks.TypeWatchGameUpdates, handler.ProcessTask)
 
-	log.Printf("Asynq worker ready, listening for tasks...")
+	slog.Info("asynq worker ready, listening for tasks")
 
 	if err := srv.Run(mux); err != nil {
-		log.Fatalf("Failed to start asynq worker: %v", err)
+		slog.Error("failed to start asynq worker", "error", err)
+		os.Exit(1)
 	}
 }
 
 func main() {
-	// Remove timestamp prefix from logs - Docker/structured logging handles timestamps
-	log.SetFlags(0)
+	slog.SetDefault(logger.New())
 
 	mode := flag.String("mode", "http", "Run mode: 'http' for Cloud Tasks handler, 'worker' for Redis queue worker")
 	flag.Parse()
@@ -128,6 +131,7 @@ func main() {
 	case "worker":
 		startWorkerMode(cfg)
 	default:
-		log.Fatalf("Unknown mode: %s. Use 'http' or 'worker'.", *mode)
+		slog.Error("unknown mode", "mode", *mode)
+		os.Exit(1)
 	}
 }

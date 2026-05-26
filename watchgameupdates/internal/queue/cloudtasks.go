@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"watchgameupdates/config"
@@ -58,11 +58,12 @@ func (q *CloudTasksQueue) Enqueue(ctx context.Context, payload models.Payload, d
 		Task:   task,
 	}
 
-	log.Printf("Enqueuing task for game %s (%s vs %s) scheduled at %s",
-		payload.Game.ID,
-		payload.Game.AwayTeam.Abbrev,
-		payload.Game.HomeTeam.Abbrev,
-		deliverAt.Format(time.RFC3339))
+	slog.Info("enqueuing Cloud Tasks task",
+		"game_id", payload.Game.ID,
+		"away", payload.Game.AwayTeam.Abbrev,
+		"home", payload.Game.HomeTeam.Abbrev,
+		"deliver_at", deliverAt.Format(time.RFC3339),
+	)
 
 	_, err = q.client.CreateTask(ctx, req)
 	if err != nil {

@@ -3,7 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -56,7 +56,7 @@ func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours 
 
 // Run fetches the schedule for the given date and enqueues a task for each future game.
 func (s *Scheduler) Run(ctx context.Context, date string) error {
-	log.Printf("Fetching schedule for %s", date)
+	slog.Info("fetching schedule", "date", date)
 
 	games, err := s.fetcher.FetchSchedule(ctx, date)
 	if err != nil {
@@ -64,36 +64,47 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 	}
 
 	if len(games) == 0 {
-		log.Printf("No games found for %s", date)
+		slog.Info("no games found", "date", date)
 		return nil
 	}
 
-	log.Printf("Found %d games for %s", len(games), date)
+	slog.Info("games found", "count", len(games), "date", date)
 
 	scheduled := 0
 	var scheduledGames []schedule.ScheduleGame
 	for _, game := range games {
 		if s.teamFilter != "" && game.HomeTeam.Abbrev != s.teamFilter && game.AwayTeam.Abbrev != s.teamFilter {
-			log.Printf("Skipping game %d (%s vs %s) - neither team matches filter %s",
-				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, s.teamFilter)
+			slog.Debug("skipping game, team filter mismatch",
+				"game_id", game.ID,
+				"away", game.AwayTeam.Abbrev,
+				"home", game.HomeTeam.Abbrev,
+				"filter", s.teamFilter,
+			)
 			continue
 		}
 
 		isLive := game.GameState == gameStateLIVE
 		if game.GameState != gameStateFUT && game.GameState != gameStatePRE && !isLive {
-			log.Printf("Skipping game %d (%s vs %s) - state is %s, not FUT or PRE",
-				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, game.GameState)
+			slog.Debug("skipping game, unexpected state",
+				"game_id", game.ID,
+				"away", game.AwayTeam.Abbrev,
+				"home", game.HomeTeam.Abbrev,
+				"state", game.GameState,
+			)
 			continue
 		}
 		if isLive && !s.includeLiveGames {
-			log.Printf("Skipping game %d (%s vs %s) - state is LIVE (set INCLUDE_LIVE_GAMES=true to monitor)",
-				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev)
+			slog.Info("skipping live game (set INCLUDE_LIVE_GAMES=true to monitor)",
+				"game_id", game.ID,
+				"away", game.AwayTeam.Abbrev,
+				"home", game.HomeTeam.Abbrev,
+			)
 			continue
 		}
 
 		startTime, err := time.Parse(time.RFC3339, game.StartTimeUTC)
 		if err != nil {
-			log.Printf("Failed to parse start time for game %d: %v", game.ID, err)
+			slog.Error("failed to parse game start time", "game_id", game.ID, "error", err)
 			continue
 		}
 
@@ -121,7 +132,7 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 		}
 
 		if err := s.queue.Enqueue(ctx, payload, deliverAt); err != nil {
-			log.Printf("Failed to enqueue task for game %d: %v", game.ID, err)
+			slog.Error("failed to enqueue task", "game_id", game.ID, "error", err)
 			continue
 		}
 
@@ -129,7 +140,7 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 		scheduled++
 	}
 
-	log.Printf("Successfully scheduled %d/%d tasks for %s", scheduled, len(games), date)
+	slog.Info("scheduling complete", "scheduled", scheduled, "total", len(games), "date", date)
 
 	if scheduled > 0 && s.notifier != nil {
 		s.notifier.SendMessage(ctx, formatSchedulerSummary(date, scheduledGames))

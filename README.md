@@ -99,6 +99,7 @@ make logs                    # Follow logs from running containers
 make schedule                # Start full system and run scheduler with live NHL data
 make schedule-test           # Start full system and run scheduler with mock data
 make schedule-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run scheduler for one team
+make schedule-fake-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run scheduler for one team using local fake schedule
 make watch TEAM=COL          # Live e2e test: schedule today's real game and tail logs
 
 # Redis mode
@@ -107,9 +108,25 @@ make redis-test              # Start Redis test environment (with mock APIs)
 make redis-schedule          # Start Redis environment and run scheduler with live data
 make redis-schedule-test     # Start Redis environment and run scheduler with mock data
 make redis-schedule-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run Redis scheduler for one team
+make redis-schedule-fake-team TEAM=TOR [DATE=YYYY-MM-DD]  # Run Redis scheduler using local fake schedule
 make redis-stop              # Stop Redis containers
 make redis-logs              # View Redis worker logs
 make build-enqueue           # Build the Redis enqueue CLI tool
+
+# Log format control (applies to any target)
+make emulator LOG_FORMAT=text        # Human-readable structured logs (local dev)
+make emulator LOG_FORMAT=json        # JSON logs (default, best for Grafana)
+make live LOG_FORMAT=text            # Live APIs with text logs
+
+# Local Loki stack (no Grafana Cloud account needed — for testing log pipeline)
+make loki-emulator           # Mock APIs + local Loki + Grafana UI
+make loki-live               # Live APIs + local Loki + Grafana UI
+
+# Grafana Cloud log shipping (set GRAFANA_LOKI_URL, GRAFANA_LOKI_USER, GRAFANA_LOKI_API_KEY)
+make grafana-emulator        # Cloud Tasks + mock APIs + Alloy → Grafana Cloud
+make grafana-live            # Cloud Tasks + live APIs + Alloy → Grafana Cloud
+make grafana-redis-test      # Redis + mock APIs + Alloy → Grafana Cloud
+make grafana-redis           # Redis + live APIs + Alloy → Grafana Cloud
 ```
 
 ### Environment Modes
@@ -193,6 +210,33 @@ The `--mode` flag on the binary controls which backend is used:
 
 See [docs/queue-visualization.md](docs/queue-visualization.md) for details on using the Asynqmon dashboard.
 
+### Log Format
+
+All services emit structured logs to stdout. The format is controlled by two environment variables:
+
+| Variable | Values | Default | Description |
+|---|---|---|---|
+| `LOG_FORMAT` | `json`, `text` | `json` | `json` produces machine-readable output (best for Grafana/Loki). `text` produces human-readable key=value output for local dev. |
+| `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | Minimum log level to emit. Use `debug` to see play-by-play fetch details. |
+
+Pass these as Makefile variables on any target:
+
+```bash
+make emulator LOG_FORMAT=text            # human-readable
+make live LOG_FORMAT=json LOG_LEVEL=debug  # JSON with debug output
+make schedule-test LOG_FORMAT=text       # full stack with readable logs
+```
+
+JSON log lines look like:
+```json
+{"time":"2026-05-26T14:30:00Z","level":"INFO","msg":"game update processed","game_id":"2024030411","last_play_type":"goal","should_reschedule":true}
+```
+
+Text log lines look like:
+```
+time=2026-05-26T14:30:00Z level=INFO msg="game update processed" game_id=2024030411 last_play_type=goal should_reschedule=true
+```
+
 ### Configuration
 
 Environment files are located in `watchgameupdates/`:
@@ -248,9 +292,17 @@ The scheduler commands have equivalents for both queue backends:
 
 | Cloud Tasks | Redis | Description |
 |---|---|---|
-| `make schedule` | `make redis-schedule` | Run scheduler with live NHL data |
-| `make schedule-test` | `make redis-schedule-test` | Run scheduler with mock data |
-| `make schedule-team TEAM=TOR` | `make redis-schedule-team TEAM=TOR` | Run scheduler for one team |
+| `make schedule` | `make redis-schedule` | Full stack + scheduler, live NHL data |
+| `make schedule-test` | `make redis-schedule-test` | Full stack + scheduler, mock data |
+| `make schedule-team TEAM=TOR` | `make redis-schedule-team TEAM=TOR` | Scheduler only, one team, real NHL schedule |
+| `make schedule-fake-team TEAM=TOR` | `make redis-schedule-fake-team TEAM=TOR` | Scheduler only, one team, local fake schedule |
+
+All targets accept `LOG_FORMAT=text` or `LOG_FORMAT=json` (default):
+
+```bash
+make schedule-test LOG_FORMAT=text       # readable logs during full stack test
+make schedule-team TEAM=TOR LOG_FORMAT=json  # JSON logs for Loki ingestion
+```
 
 **Cloud Tasks (default):**
 
@@ -390,6 +442,42 @@ Worker Mode:     Redis  → Asynq Handler → GameProcessor → Reschedule via R
 ```
 
 ## Advanced Usage
+
+### Grafana Loki Log Shipping
+
+The backend ships logs to Grafana Loki via [Grafana Alloy](https://grafana.com/docs/alloy/), a sidecar container that reads Docker container stdout and forwards it to Loki. The Go application writes only to stdout (12-factor compliant) and is unaware of the destination.
+
+**Testing locally (no account needed):**
+
+```bash
+make loki-emulator   # or: make loki-live
+```
+
+This starts a local Loki + Grafana UI stack. Open http://localhost:3000, go to **Explore → Loki**, and query `{service="backend"}`. See [docs/grafana-loki-setup.md](docs/grafana-loki-setup.md) for full instructions.
+
+**Shipping to Grafana Cloud:**
+
+1. Set credentials in `.env.home`:
+   ```
+   GRAFANA_LOKI_URL=https://logs-prod-XXX.grafana.net/loki/api/v1/push
+   GRAFANA_LOKI_USER=<instance ID>
+   GRAFANA_LOKI_API_KEY=<Logs Writer API key>
+   ```
+2. Run:
+   ```bash
+   make grafana-live        # Cloud Tasks mode
+   make grafana-redis       # Redis worker mode
+   ```
+3. Verify: Alloy pipeline UI at http://localhost:12345, then query logs in Grafana Cloud.
+
+Example LogQL queries once logs are flowing:
+```logql
+{service="backend"} | json | level="ERROR"
+{service="backend"} | json | game_id="2024030411"
+{service="scheduler"} | json | msg="scheduling complete"
+```
+
+See [docs/grafana-loki-setup.md](docs/grafana-loki-setup.md) for the complete setup guide including credential rotation and troubleshooting.
 
 ### Direct Compose Usage
 

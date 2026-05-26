@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"watchgameupdates/config"
@@ -31,7 +32,7 @@ func WatchGameUpdatesHandler(
 		return
 	}
 
-	log.Printf("Raw body: %s", body)
+	slog.Debug("received request body", "game_id", payload.Game.ID, "body", string(body))
 
 	// Check execution window using shared logic
 	skip, err := services.ShouldSkipExecution(payload)
@@ -54,7 +55,7 @@ func WatchGameUpdatesHandler(
 		cfg := config.LoadConfig()
 		interval := services.RescheduleInterval(result.LastPlay, result.MaxPeriods, cfg)
 		if err := scheduleNextCheck(payload, interval); err != nil {
-			log.Printf("Failed to schedule next check: %v", err)
+			slog.Error("failed to schedule next check", "game_id", payload.Game.ID, "error", err)
 			http.Error(w, "Failed to schedule next check", http.StatusInternalServerError)
 			return
 		}
@@ -70,7 +71,8 @@ func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 
 	tasksClient, err := tasks.NewCloudTasksClient(tasksCtx, cfg)
 	if err != nil {
-		log.Fatalf("failed to create tasks client: %v", err)
+		slog.Error("failed to create tasks client", "error", err)
+		os.Exit(1)
 	}
 	defer tasksClient.Close()
 
@@ -88,9 +90,9 @@ func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 	queuePath := fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queueName)
 
 	if payload.ExecutionEnd != nil {
-		log.Printf("Max execution time for game %s is set to %s", payload.Game.ID, *payload.ExecutionEnd)
+		slog.Debug("scheduling next check", "game_id", payload.Game.ID, "execution_end", *payload.ExecutionEnd)
 	} else {
-		log.Printf("Max execution time for game %s is not set", payload.Game.ID)
+		slog.Debug("scheduling next check, no execution end set", "game_id", payload.Game.ID)
 	}
 
 	task := &taskspb.Task{
@@ -112,13 +114,13 @@ func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 		Task:   task,
 	}
 
-	log.Printf("Sending task creation request in %ds for game %s to Cloud Tasks queue %s", int(interval.Seconds()), payload.Game.ID, queuePath)
+	slog.Info("enqueuing next check task", "game_id", payload.Game.ID, "interval_seconds", int(interval.Seconds()), "queue", queuePath)
 
 	_, err = tasksClient.CreateTask(tasksCtx, req)
 	if err != nil {
 		return fmt.Errorf("failed to create reschedule task: %w", err)
 	}
 
-	log.Printf("Successfully scheduled next check task for game %s at %v", payload.Game.ID, scheduleTime.AsTime().Format(time.RFC3339))
+	slog.Info("next check scheduled", "game_id", payload.Game.ID, "scheduled_at", scheduleTime.AsTime().Format(time.RFC3339))
 	return nil
 }

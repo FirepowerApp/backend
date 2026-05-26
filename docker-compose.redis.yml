@@ -63,6 +63,8 @@ services:
       - REDIS_PASSWORD=
       - REDIS_DB=0
       - MESSAGE_INTERVAL_SECONDS=60
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     env_file:
       - ./watchgameupdates/.env.redis
     depends_on:
@@ -86,6 +88,8 @@ services:
       - REDIS_ADDRESS=redis:6379
       - REDIS_PASSWORD=
       - REDIS_DB=0
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     env_file:
       - ./watchgameupdates/.env.redis
     depends_on:

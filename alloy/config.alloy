@@ -1,0 +1,51 @@
+// Grafana Alloy configuration — ships container logs to Grafana Cloud Loki.
+//
+// Credentials are read from environment variables (never hardcoded):
+//   GRAFANA_LOKI_URL      e.g. https://logs-prod-006.grafana.net/loki/api/v1/push
+//   GRAFANA_LOKI_USER     Grafana Cloud numeric instance ID
+//   GRAFANA_LOKI_API_KEY  API key with "Logs Writer" role
+//
+// For local testing without Grafana Cloud, use docker-compose.loki-local.yml
+// which sets GRAFANA_LOKI_URL=http://loki:3100/loki/api/v1/push with no auth.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+loki.relabel "containers" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  forward_to    = [loki.write.destination.receiver]
+  relabel_rules = loki.relabel.containers.rules
+}
+
+loki.write "destination" {
+  endpoint {
+    url = env("GRAFANA_LOKI_URL")
+
+    basic_auth {
+      username = env("GRAFANA_LOKI_USER")
+      password = env("GRAFANA_LOKI_API_KEY")
+    }
+  }
+}

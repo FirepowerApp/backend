@@ -2,7 +2,7 @@ package services
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -33,11 +33,11 @@ func ShouldSkipExecution(payload models.Payload) (bool, error) {
 			return true, fmt.Errorf("invalid execution_end format: %w", err)
 		}
 		if time.Now().After(executionEnd) {
-			log.Printf("Current time is after execution end (%s). Skipping execution.", executionEnd.Format(time.RFC3339))
+			slog.Info("current time is past execution end, skipping", "execution_end", executionEnd.Format(time.RFC3339))
 			return true, nil
 		}
 	} else {
-		log.Println("Max execution time not set, proceeding without time check.")
+		slog.Debug("no execution end set, proceeding without time check")
 	}
 	return false, nil
 }
@@ -57,12 +57,12 @@ func (gp *GameProcessor) ProcessGameUpdate(payload models.Payload) ProcessResult
 	lastPlay, maxPeriods := FetchPlayByPlay(payload.Game.ID)
 
 	if _, ok := recomputeTypes[lastPlay.TypeDescKey]; ok {
-		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlay.TypeDescKey, payload.Game.ID)
+		slog.Info("processing play type, fetching MoneyPuck data", "play_type", lastPlay.TypeDescKey, "game_id", payload.Game.ID)
 
 		requiredKeys := gp.NotificationService.GetAllRequiredDataKeys()
 		gameData, err := gp.Fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
 		if err != nil {
-			log.Printf("ERROR: Failed to fetch and parse MoneyPuck data for game %s: %v", payload.Game.ID, err)
+			slog.Error("failed to fetch MoneyPuck data", "game_id", payload.Game.ID, "error", err)
 		}
 
 		// Populate game state (period/time) from play-by-play data.
@@ -77,7 +77,7 @@ func (gp *GameProcessor) ProcessGameUpdate(payload models.Payload) ProcessResult
 			awayGoals, awayGOK := gameData["awayTeamGoals"]
 			if homeGOK && awayGOK && homeGoals == awayGoals {
 				if shootoutErr := AdjustScoreForShootout(gameData); shootoutErr != nil {
-					log.Printf("Failed to adjust score for shootout: %v", shootoutErr)
+					slog.Error("failed to adjust score for shootout", "game_id", payload.Game.ID, "error", shootoutErr)
 				}
 			}
 		}
@@ -86,7 +86,7 @@ func (gp *GameProcessor) ProcessGameUpdate(payload models.Payload) ProcessResult
 	}
 
 	shouldReschedule := ShouldReschedule(payload, lastPlay)
-	log.Printf("Last play type: %s, Should reschedule: %v\n", lastPlay.TypeDescKey, shouldReschedule)
+	slog.Info("game update processed", "game_id", payload.Game.ID, "last_play_type", lastPlay.TypeDescKey, "should_reschedule", shouldReschedule)
 
 	return ProcessResult{
 		ShouldReschedule: shouldReschedule,

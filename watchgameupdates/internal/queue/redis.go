@@ -3,7 +3,7 @@ package queue
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"watchgameupdates/config"
@@ -44,12 +44,13 @@ func (q *RedisQueue) Enqueue(_ context.Context, payload models.Payload, deliverA
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
 
-	log.Printf("Enqueuing task for game %s (%s vs %s) scheduled at %s, task ID: %s",
-		payload.Game.ID,
-		payload.Game.AwayTeam.Abbrev,
-		payload.Game.HomeTeam.Abbrev,
-		deliverAt.Format(time.RFC3339),
-		info.ID)
+	slog.Info("enqueuing Redis task",
+		"game_id", payload.Game.ID,
+		"away", payload.Game.AwayTeam.Abbrev,
+		"home", payload.Game.HomeTeam.Abbrev,
+		"deliver_at", deliverAt.Format(time.RFC3339),
+		"task_id", info.ID,
+	)
 
 	return nil
 }

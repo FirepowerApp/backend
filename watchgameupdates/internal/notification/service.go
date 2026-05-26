@@ -2,7 +2,7 @@ package notification
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -43,23 +43,23 @@ func (s *Service) discoverNotifiers() {
 func (s *Service) tryCreateDiscordNotifier() Notifier {
 	config, err := LoadDiscordConfigFromEnv()
 	if err != nil {
-		log.Printf("Discord notifier config not found or invalid: %v", err)
+		slog.Debug("Discord notifier not configured", "reason", err)
 		return nil
 	}
 
 	notifier, err := NewDiscordNotifier(config)
 	if err != nil {
-		log.Printf("Failed to create Discord notifier: %v", err)
+		slog.Error("failed to create Discord notifier", "error", err)
 		return nil
 	}
 
-	log.Printf("Discord notifier created successfully")
+	slog.Info("Discord notifier created successfully")
 	return notifier
 }
 
 func (s *Service) SendGameEventNotifications(game Game, gameData map[string]string) {
 	if !s.shouldNotify {
-		log.Printf("Notifications disabled for this service instance, skipping game event notifications")
+		slog.Debug("notifications disabled, skipping game event notifications")
 		return
 	}
 
@@ -69,7 +69,7 @@ func (s *Service) SendGameEventNotifications(game Game, gameData map[string]stri
 			if val, ok := gameData[key]; ok {
 				data[key] = val
 			} else {
-				log.Printf("WARNING: Required data key '%s' not found in game data for notifier %d", key, i)
+				slog.Warn("required data key missing for notifier", "key", key, "notifier_index", i)
 			}
 		}
 
@@ -85,12 +85,12 @@ func (s *Service) SendGameEventNotifications(game Game, gameData map[string]stri
 
 func (s *Service) SendGameUpdate(homeTeam, awayTeam, homeXG, awayXG, homeGoals, awayGoals string) {
 	if !s.shouldNotify {
-		log.Printf("Notifications disabled for this service instance, skipping game update notifications")
+		slog.Debug("notifications disabled, skipping game update notification")
 		return
 	}
 
 	if len(s.notifiers) == 0 {
-		log.Printf("No notifiers configured, skipping notification")
+		slog.Debug("no notifiers configured, skipping notification")
 		return
 	}
 
@@ -117,31 +117,31 @@ func (s *Service) sendToNotifier(notifier Notifier, req NotificationRequest, ind
 	message := notifier.FormatMessage(req)
 	resultChan, err := notifier.SendNotification(ctx, message)
 	if err != nil {
-		log.Printf("Notifier %d failed to send notification: %v", index, err)
+		slog.Error("notifier failed to send notification", "notifier_index", index, "error", err)
 		return
 	}
 
 	select {
 	case result := <-resultChan:
 		if !result.Success {
-			log.Printf("Notifier %d notification failed: %v", index, result.Error)
+			slog.Error("notification send failed", "notifier_index", index, "error", result.Error)
 		} else {
-			log.Printf("Notifier %d notification sent successfully: %s", index, result.ID)
+			slog.Info("notification sent successfully", "notifier_index", index, "message_id", result.ID)
 		}
 	case <-ctx.Done():
-		log.Printf("Notifier %d notification timed out", index)
+		slog.Warn("notification timed out", "notifier_index", index)
 	}
 }
 
 // SendMessage sends a plain-text message to all configured notifiers and waits for completion.
 func (s *Service) SendMessage(ctx context.Context, message string) {
 	if !s.shouldNotify {
-		log.Printf("Notifications disabled for this service instance, skipping message")
+		slog.Debug("notifications disabled, skipping message")
 		return
 	}
 
 	if len(s.notifiers) == 0 {
-		log.Printf("No notifiers configured, skipping notification")
+		slog.Debug("no notifiers configured, skipping notification")
 		return
 	}
 
@@ -155,19 +155,19 @@ func (s *Service) SendMessage(ctx context.Context, message string) {
 
 			resultChan, err := n.SendNotification(notifCtx, message)
 			if err != nil {
-				log.Printf("Notifier %d failed to send message: %v", idx, err)
+				slog.Error("notifier failed to send message", "notifier_index", idx, "error", err)
 				return
 			}
 
 			select {
 			case result := <-resultChan:
 				if !result.Success {
-					log.Printf("Notifier %d message failed: %v", idx, result.Error)
+					slog.Error("message send failed", "notifier_index", idx, "error", result.Error)
 				} else {
-					log.Printf("Notifier %d message sent successfully: %s", idx, result.ID)
+					slog.Info("message sent successfully", "notifier_index", idx, "message_id", result.ID)
 				}
 			case <-notifCtx.Done():
-				log.Printf("Notifier %d message timed out", idx)
+				slog.Warn("message send timed out", "notifier_index", idx)
 			}
 		}(notifier, i)
 	}
@@ -179,7 +179,7 @@ func (s *Service) Close() error {
 	var lastErr error
 	for _, notifier := range s.notifiers {
 		if err := notifier.Close(); err != nil {
-			log.Printf("Error closing notifier: %v", err)
+			slog.Error("error closing notifier", "error", err)
 			lastErr = err
 		}
 	}

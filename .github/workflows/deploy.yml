@@ -56,6 +56,22 @@ jobs:
           fi
           echo "tag=${BRANCH}-${SHA}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate manifests
+        env:
+          IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+        run: |
+          mkdir rendered
+          for f in k8s/deployment-handler.yaml k8s/cronjob-scheduler.yaml; do
+            envsubst < "$f" > "rendered/$(basename "$f")"
+          done
+          cp k8s/deployment-cloudtasks.yaml k8s/namespace.yaml \
+             k8s/configmap.yaml k8s/service-backend.yaml k8s/service-cloudtasks.yaml \
+             rendered/
+          for f in rendered/*.yaml; do
+            echo "Checking: $f"
+            kubectl apply --dry-run=client -f "$f"
+          done
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:

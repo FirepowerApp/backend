@@ -3,7 +3,7 @@ package tasks
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"watchgameupdates/config"
@@ -33,21 +33,21 @@ func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task
 	payload, err := ParseWatchGameUpdatesPayload(t)
 	if err != nil {
 		// Poison pill: malformed JSON will never succeed on retry. Drop the task.
-		log.Printf("Dropping task with invalid payload: %v", err)
+		slog.Error("dropping task with invalid payload", "error", err)
 		return nil
 	}
 
-	log.Printf("Processing task for game %s", payload.Game.ID)
+	slog.Info("processing task", "game_id", payload.Game.ID)
 
 	// Check execution window
 	skip, err := services.ShouldSkipExecution(payload)
 	if err != nil {
 		// Poison pill: malformed ExecutionEnd will never parse on retry. Drop the task.
-		log.Printf("Dropping task for game %s with invalid execution window: %v", payload.Game.ID, err)
+		slog.Error("dropping task with invalid execution window", "game_id", payload.Game.ID, "error", err)
 		return nil
 	}
 	if skip {
-		log.Printf("Execution window expired for game %s, task complete.", payload.Game.ID)
+		slog.Info("execution window expired, task complete", "game_id", payload.Game.ID)
 		return nil
 	}
 
@@ -89,7 +89,6 @@ func (h *WatchGameUpdatesHandler) scheduleNextCheck(payload models.Payload) erro
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
 
-	log.Printf("Scheduled next check for game %s, task ID: %s, processing in: %v",
-		payload.Game.ID, info.ID, interval)
+	slog.Info("next check scheduled", "game_id", payload.Game.ID, "task_id", info.ID, "interval", interval.String())
 	return nil
 }

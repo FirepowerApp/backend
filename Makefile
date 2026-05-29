@@ -19,7 +19,15 @@
 
 TEAM ?= COL
 
-.PHONY: help live emulator stop logs schedule schedule-test watch schedule-team redis-up redis-test redis-schedule redis-schedule-test redis-schedule-team redis-stop redis-logs build-enqueue
+# Log format for all container services.
+# "json" (default) is best for Grafana/Loki. "text" is human-readable for local dev.
+# Usage: make emulator LOG_FORMAT=text
+LOG_FORMAT ?= json
+LOG_LEVEL  ?= info
+export LOG_FORMAT
+export LOG_LEVEL
+
+.PHONY: help live emulator stop logs schedule schedule-test watch schedule-team schedule-fake-team redis-up redis-test redis-schedule redis-schedule-test redis-schedule-team redis-schedule-fake-team redis-stop redis-logs build-enqueue grafana-live grafana-emulator grafana-redis grafana-redis-test loki-live loki-emulator
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -164,3 +172,95 @@ build-enqueue: ## Build the Redis queue enqueue CLI tool
 	@printf "$(BLUE)[INFO]$(NC) Building enqueue CLI tool...\n"
 	@go run build.go -target enqueue
 	@printf "$(GREEN)[OK]$(NC) Enqueue CLI built: ./bin/enqueue\n"
+
+schedule-fake-team: ## Run scheduler for one team using a fake local schedule file (usage: make schedule-fake-team TEAM=TOR [DATE=YYYY-MM-DD])
+	@if [ -z "$(TEAM)" ]; then printf "Error: TEAM is required. Usage: make schedule-fake-team TEAM=TOR\n"; exit 1; fi
+	@printf "$(BLUE)[INFO]$(NC) Running scheduler for team $(TEAM) using fake schedule...\n"
+	@podman-compose -f docker-compose.yml -f docker-compose.emulator.yml run --rm \
+	  -e TEAM_FILTER=$(TEAM) \
+	  -e SCHEDULE_FILE=/testdata/schedule.json \
+	  -e INCLUDE_LIVE_GAMES=true \
+	  $(if $(DATE),-e SCHEDULE_DATE=$(DATE),) \
+	  scheduler
+	@printf "$(GREEN)[OK]$(NC) Scheduler finished for $(TEAM)\n"
+
+redis-schedule-fake-team: ## Run Redis scheduler for one team using a fake local schedule file (usage: make redis-schedule-fake-team TEAM=TOR [DATE=YYYY-MM-DD])
+	@if [ -z "$(TEAM)" ]; then printf "Error: TEAM is required. Usage: make redis-schedule-fake-team TEAM=TOR\n"; exit 1; fi
+	@printf "$(BLUE)[INFO]$(NC) Running Redis scheduler for team $(TEAM) using fake schedule...\n"
+	@podman-compose -f $(COMPOSE_REDIS) run --rm \
+	  -e TEAM_FILTER=$(TEAM) \
+	  -e SCHEDULE_FILE=/testdata/schedule.json \
+	  -e INCLUDE_LIVE_GAMES=true \
+	  $(if $(DATE),-e SCHEDULE_DATE=$(DATE),) \
+	  scheduler
+	@printf "$(GREEN)[OK]$(NC) Redis scheduler finished for $(TEAM)\n"
+
+##@ Grafana Cloud Log Shipping (requires GRAFANA_LOKI_URL, GRAFANA_LOKI_USER, GRAFANA_LOKI_API_KEY)
+
+grafana-live: ## Start live stack + Grafana Alloy log shipping
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.grafana.yml \
+	  --profile grafana up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with Grafana Alloy\n"
+	@printf "  Backend:        http://localhost:8080\n"
+	@printf "  Tasks emulator: http://localhost:8123\n"
+	@printf "  Alloy UI:       http://localhost:12345\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
+
+grafana-emulator: ## Start mock API stack + Grafana Alloy log shipping
+	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
+	@podman pull docker.io/blnelson/firepowermockdataserver:latest
+	@podman-compose -f docker-compose.yml -f docker-compose.emulator.yml -f docker-compose.grafana.yml \
+	  --profile grafana up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with Grafana Alloy\n"
+	@printf "  Backend:            http://localhost:8080\n"
+	@printf "  Tasks emulator:     http://localhost:8123\n"
+	@printf "  Game data emulator: http://localhost:8125 (NHL), http://localhost:8124 (MoneyPuck)\n"
+	@printf "  Alloy UI:           http://localhost:12345\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
+
+grafana-redis: ## Start Redis worker stack + Grafana Alloy log shipping (live APIs)
+	@podman-compose -f $(COMPOSE_REDIS) -f docker-compose.grafana.yml \
+	  --profile home --profile grafana up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started Redis worker with Grafana Alloy\n"
+	@printf "  Asynqmon dashboard: http://localhost:8980\n"
+	@printf "  Redis:              localhost:6379\n"
+	@printf "  Alloy UI:           http://localhost:12345\n"
+	@printf "View logs: make redis-logs  |  Stop: make redis-stop\n"
+
+grafana-redis-test: ## Start Redis worker stack + Grafana Alloy log shipping (mock APIs)
+	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
+	@podman pull docker.io/blnelson/firepowermockdataserver:latest
+	@podman-compose -f $(COMPOSE_REDIS) -f docker-compose.grafana.yml \
+	  --profile test --profile grafana up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started Redis test environment with Grafana Alloy\n"
+	@printf "  Asynqmon dashboard:  http://localhost:8980\n"
+	@printf "  Redis:               localhost:6379\n"
+	@printf "  Mock NHL API:        http://localhost:8125\n"
+	@printf "  Mock MoneyPuck API:  http://localhost:8124\n"
+	@printf "  Alloy UI:            http://localhost:12345\n"
+	@printf "View logs: make redis-logs  |  Stop: make redis-stop\n"
+
+##@ Local Loki Stack (no Grafana Cloud account needed)
+
+loki-live: ## Start live stack + local Loki + Grafana UI for log testing
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.loki-local.yml \
+	  up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with local Loki stack\n"
+	@printf "  Backend:        http://localhost:8080\n"
+	@printf "  Tasks emulator: http://localhost:8123\n"
+	@printf "  Grafana UI:     http://localhost:3000  (Explore → Loki → {service=\"backend\"})\n"
+	@printf "  Alloy UI:       http://localhost:12345\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
+
+loki-emulator: ## Start mock API stack + local Loki + Grafana UI for log testing
+	@printf "$(BLUE)[INFO]$(NC) Pulling game data emulator...\n"
+	@podman pull docker.io/blnelson/firepowermockdataserver:latest
+	@podman-compose -f docker-compose.yml -f docker-compose.emulator.yml -f docker-compose.loki-local.yml \
+	  up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started with local Loki stack\n"
+	@printf "  Backend:            http://localhost:8080\n"
+	@printf "  Tasks emulator:     http://localhost:8123\n"
+	@printf "  Game data emulator: http://localhost:8125 (NHL), http://localhost:8124 (MoneyPuck)\n"
+	@printf "  Grafana UI:         http://localhost:3000  (Explore → Loki → {service=\"backend\"})\n"
+	@printf "  Alloy UI:           http://localhost:12345\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"

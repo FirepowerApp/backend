@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"watchgameupdates/config"
+	"watchgameupdates/internal/logger"
 	"watchgameupdates/internal/notification"
 	"watchgameupdates/internal/queue"
 	"watchgameupdates/internal/schedule"
@@ -13,7 +15,7 @@ import (
 )
 
 func main() {
-	log.SetFlags(0)
+	slog.SetDefault(logger.New())
 
 	cfg := config.LoadConfig()
 
@@ -27,13 +29,14 @@ func main() {
 	var taskQueue scheduler.TaskEnqueuer
 	switch cfg.SchedulerQueue {
 	case "redis":
-		log.Printf("Scheduler queue: Redis (%s)", cfg.RedisAddress)
+		slog.Info("scheduler queue: Redis", "redis_address", cfg.RedisAddress)
 		taskQueue = queue.NewRedisQueue(cfg)
 	default:
-		log.Printf("Scheduler queue: Cloud Tasks")
+		slog.Info("scheduler queue: Cloud Tasks")
 		ctQueue, err := queue.NewCloudTasksQueue(ctx, cfg)
 		if err != nil {
-			log.Fatalf("Failed to create Cloud Tasks queue: %v", err)
+			slog.Error("failed to create Cloud Tasks queue", "error", err)
+			os.Exit(1)
 		}
 		taskQueue = ctQueue
 	}
@@ -49,8 +52,9 @@ func main() {
 	// Create and run scheduler
 	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, cfg.TeamFilter, notifService, cfg.IncludeLiveGames)
 	if err := s.Run(ctx, date); err != nil {
-		log.Fatalf("Scheduler failed: %v", err)
+		slog.Error("scheduler failed", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("Scheduler completed successfully")
+	slog.Info("scheduler completed successfully")
 }

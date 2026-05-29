@@ -93,6 +93,7 @@ make watch TEAM=COL    # E2E live test: schedule today's game and follow logs
 | `notification/` | Discord and LiveActivity (APNs broadcast push) notifiers |
 | `notification/liveactivity/` | iOS Live Activity APNs push (JWT signing, formatter, channel map) |
 | `config/` | Environment configuration |
+| `logger/` | Shared `slog.Logger` factory (JSON/text output, log level from env) |
 
 **Service ports:**
 
@@ -102,6 +103,9 @@ make watch TEAM=COL    # E2E live test: schedule today's game and follow logs
 | Cloud Tasks Emulator | 8123 |
 | Mock MoneyPuck API | 8124 |
 | Mock NHL API | 8125 |
+| Grafana Alloy UI (when using grafana/loki targets) | 12345 |
+| Local Loki API (when using loki-* targets) | 3100 |
+| Local Grafana UI (when using loki-* targets) | 3000 |
 
 ## Environment Variables
 
@@ -119,6 +123,10 @@ DISCORD_CHANNEL_ID=          # Discord channel to post game updates
 MESSAGE_INTERVAL_SECONDS=60       # active-play polling interval (default 60)
 PERIOD_END_INTERVAL_SECONDS=1200  # post-period-end wait before next poll (default 1200)
 
+# Logging (consumed by the Go app via internal/logger)
+LOG_FORMAT=json              # "json" (default) or "text" for human-readable output
+LOG_LEVEL=info               # "debug", "info" (default), "warn", "error"
+
 # Live Activity APNs (optional — set LIVEACTIVITY_PUSH_ENABLED=true to enable)
 LIVEACTIVITY_PUSH_ENABLED=
 APNS_TEAM_ID=                # 10-char Apple Developer Team ID
@@ -126,6 +134,12 @@ APNS_KEY_ID=                 # .p8 key ID from App Store Connect
 APNS_AUTH_KEY=               # base64-encoded .p8 file contents
 APNS_TOPIC=                  # bundle ID, e.g. me.blakenelson.firepower
 APNS_HOST=                   # api.sandbox.push.apple.com or api.push.apple.com
+
+# Grafana Cloud Loki (consumed by Grafana Alloy sidecar, not the Go app)
+# See docs/grafana-loki-setup.md for setup instructions.
+GRAFANA_LOKI_URL=            # e.g. https://logs-prod-006.grafana.net/loki/api/v1/push
+GRAFANA_LOKI_USER=           # Grafana Cloud numeric instance ID
+GRAFANA_LOKI_API_KEY=        # API key with "Logs Writer" role
 ```
 
 ## Commit Guidelines

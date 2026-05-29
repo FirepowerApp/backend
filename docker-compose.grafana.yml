@@ -1,0 +1,33 @@
+# Grafana Alloy overlay — ships container logs to Grafana Cloud Loki.
+#
+# Activate by stacking this file on top of your base compose file:
+#   make grafana-live        # Live APIs + Alloy
+#   make grafana-emulator    # Mock APIs + Alloy
+#   make grafana-redis       # Redis worker + Alloy
+#   make grafana-redis-test  # Redis worker + mock APIs + Alloy
+#
+# Required environment variables (set in .env.home or export in your shell):
+#   GRAFANA_LOKI_URL     = https://logs-prod-XXX.grafana.net/loki/api/v1/push
+#   GRAFANA_LOKI_USER    = <numeric instance ID>
+#   GRAFANA_LOKI_API_KEY = <API key with Logs Writer role>
+#
+# Alloy UI: http://localhost:12345
+
+services:
+  alloy:
+    image: grafana/alloy:latest
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - GRAFANA_LOKI_URL
+      - GRAFANA_LOKI_USER
+      - GRAFANA_LOKI_API_KEY
+    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+    ports:
+      - "12345:12345"
+    networks:
+      - net
+    restart: unless-stopped
+    profiles:
+      - grafana

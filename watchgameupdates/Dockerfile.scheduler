@@ -16,4 +16,4 @@ WORKDIR /
 
 COPY --from=builder /app/scheduler .
 
-CMD ["/scheduler"]
+ENTRYPOINT ["/scheduler"]

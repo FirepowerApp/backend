@@ -1,12 +1,9 @@
 package liveactivity
 
-// teamChannels maps NHL team tricodes to their Apple-assigned APNs broadcast
-// channel IDs. Generate a channel ID from the iOS app for each team, then
-// paste the value next to the corresponding tricode.
-//
-// Teams with an empty string are skipped silently at push time — the backend
-// will still push to the other team in the game if its channel ID is populated.
-var teamChannels = map[string]string{
+// debugChannels maps NHL team tricodes to APNs broadcast channel IDs created in
+// the Development environment (App Store Connect → Push Notifications → Broadcast → Development).
+// Use these with sandbox APNs and debug/simulator builds.
+var debugChannels = map[string]string{
 	"ANA": "PHP5yU/pEfEAAMK1EJkzxg==",
 	"BOS": "",
 	"BUF": "iqg6AFASEfEAAL4dEtalNQ==",
@@ -21,7 +18,7 @@ var teamChannels = map[string]string{
 	"FLA": "",
 	"LAK": "",
 	"MIN": "",
-	"MTL": "",
+	"MTL": "uj76s1ikEfEAAObg6VLmpQ==",
 	"NJD": "",
 	"NSH": "",
 	"NYI": "",
@@ -36,15 +33,57 @@ var teamChannels = map[string]string{
 	"TOR": "",
 	"UTA": "",
 	"VAN": "",
-	"VGK": "",
+	"VGK": "CVEIvlilEfEAAK6J2RjHtg==",
+	"WPG": "",
+	"WSH": "",
+}
+
+// prodChannels maps NHL team tricodes to APNs broadcast channel IDs created in
+// the Production environment (App Store Connect → Push Notifications → Broadcast → Production).
+// Use these with production APNs and App Store / TestFlight builds.
+var prodChannels = map[string]string{
+	"ANA": "",
+	"BOS": "",
+	"BUF": "",
+	"CAR": "d4E+F1ikEfEAAF7OhT1omw==",
+	"CBJ": "",
+	"CGY": "",
+	"CHI": "",
+	"COL": "S7cBYlilEfEAADY6cc28lw==",
+	"DAL": "",
+	"DET": "",
+	"EDM": "",
+	"FLA": "",
+	"LAK": "",
+	"MIN": "",
+	"MTL": "GOmex1ilEfEAAOYo81Crcg==",
+	"NJD": "",
+	"NSH": "",
+	"NYI": "",
+	"NYR": "",
+	"OTT": "",
+	"PHI": "",
+	"PIT": "",
+	"SEA": "",
+	"SJS": "",
+	"STL": "",
+	"TBL": "",
+	"TOR": "",
+	"UTA": "",
+	"VAN": "",
+	"VGK": "Y8GZXlikEfEAAE4quYgbSQ==",
 	"WPG": "",
 	"WSH": "",
 }
 
 // channelForTeam looks up the APNs broadcast channel ID for a tricode.
-// Returns ("", false) if the team is unknown or its channel ID is not yet populated.
-func channelForTeam(tricode string) (string, bool) {
-	id, known := teamChannels[tricode]
+// Returns ("", false) if the team is unknown or its channel ID is not populated.
+func channelForTeam(tricode string, useDevChannels bool) (string, bool) {
+	m := prodChannels
+	if useDevChannels {
+		m = debugChannels
+	}
+	id, known := m[tricode]
 	if !known || id == "" {
 		return "", false
 	}

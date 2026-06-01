@@ -1,0 +1,10 @@
+# Compose override: use development APNs channel IDs with the live data stack.
+# Usage: make live-dev
+# Equivalent to .env.home but forces APNS_CHANNEL_ENV=development regardless of
+# what is set in the env file. Useful when testing APNs push against a real game
+# with a debug/simulator iOS build.
+services:
+  backend:
+    environment:
+      - APNS_CHANNEL_ENV=development
+      - APNS_HOST=api.sandbox.push.apple.com

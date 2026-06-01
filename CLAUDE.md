@@ -124,7 +124,7 @@ LIVEACTIVITY_PUSH_ENABLED=
 APNS_TEAM_ID=                # 10-char Apple Developer Team ID
 APNS_KEY_ID=                 # .p8 key ID from App Store Connect
 APNS_AUTH_KEY=               # base64-encoded .p8 file contents
-APNS_TOPIC=                  # bundle ID, e.g. me.blakenelson.firepower
+APNS_TOPIC=                  # bundle ID, e.g. com.blakenelson.Firepower
 APNS_HOST=                   # api.sandbox.push.apple.com or api.push.apple.com
 ```
 

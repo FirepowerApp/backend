@@ -75,7 +75,7 @@ type apnsPayload struct {
 }
 
 // BuildDispatchMessage produces the JSON string for FormatMessage.
-func BuildDispatchMessage(req NotificationRequest) (string, error) {
+func BuildDispatchMessage(req NotificationRequest, useDevChannels bool) (string, error) {
 	cs, err := buildContentState(req)
 	if err != nil {
 		return "", err
@@ -107,7 +107,7 @@ func BuildDispatchMessage(req NotificationRequest) (string, error) {
 	homeAbbrev := strings.ToUpper(req.Data["homeTeamAbbrev"])
 	awayAbbrev := strings.ToUpper(req.Data["awayTeamAbbrev"])
 
-	channels := channelsForTeams(homeAbbrev, awayAbbrev)
+	channels := channelsForTeams(homeAbbrev, awayAbbrev, useDevChannels)
 	if len(channels) == 0 {
 		return "", fmt.Errorf("no channel IDs registered for %s or %s", homeAbbrev, awayAbbrev)
 	}
@@ -185,15 +185,15 @@ func formatLastEvent(playType string) string {
 
 // channelsForTeams returns the APNs broadcast channel IDs for the two teams.
 // Teams whose channel ID has not been populated in channels.go are skipped.
-func channelsForTeams(homeAbbrev, awayAbbrev string) []string {
+func channelsForTeams(homeAbbrev, awayAbbrev string, useDevChannels bool) []string {
 	var channels []string
-	if id, ok := channelForTeam(homeAbbrev); ok {
+	if id, ok := channelForTeam(homeAbbrev, useDevChannels); ok {
 		channels = append(channels, id)
 	} else {
 		log.Printf("WARN: no channel ID for home team %s, skipping", homeAbbrev)
 	}
 	if awayAbbrev != "" && awayAbbrev != homeAbbrev {
-		if id, ok := channelForTeam(awayAbbrev); ok {
+		if id, ok := channelForTeam(awayAbbrev, useDevChannels); ok {
 			channels = append(channels, id)
 		} else {
 			log.Printf("WARN: no channel ID for away team %s, skipping", awayAbbrev)

@@ -39,7 +39,8 @@ var requiredDataKeys = []string{
 
 // LiveActivityNotifier implements notification.Notifier.
 type LiveActivityNotifier struct {
-	client *apnsClient
+	client         *apnsClient
+	useDevChannels bool
 }
 
 // New creates a LiveActivityNotifier from environment config.
@@ -55,8 +56,12 @@ func New() (*LiveActivityNotifier, error) {
 		return nil, fmt.Errorf("create APNs client: %w", err)
 	}
 
-	log.Printf("LiveActivity notifier initialized: host=%s topic=%s", cfg.Host, cfg.Topic)
-	return &LiveActivityNotifier{client: client}, nil
+	channelEnv := "production"
+	if cfg.UseDevChannels {
+		channelEnv = "development"
+	}
+	log.Printf("LiveActivity notifier initialized: host=%s topic=%s channels=%s", cfg.Host, cfg.Topic, channelEnv)
+	return &LiveActivityNotifier{client: client, useDevChannels: cfg.UseDevChannels}, nil
 }
 
 func (n *LiveActivityNotifier) GetRequiredDataKeys() []string {
@@ -65,7 +70,7 @@ func (n *LiveActivityNotifier) GetRequiredDataKeys() []string {
 
 // FormatMessage builds the dispatch envelope (channels + APNs payload) as JSON.
 func (n *LiveActivityNotifier) FormatMessage(req NotificationRequest) string {
-	msg, err := BuildDispatchMessage(req)
+	msg, err := BuildDispatchMessage(req, n.useDevChannels)
 	if err != nil {
 		log.Printf("ERROR: LiveActivity FormatMessage: %v", err)
 		return ""

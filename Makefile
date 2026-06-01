@@ -19,7 +19,7 @@
 
 TEAM ?= COL
 
-.PHONY: help live emulator stop logs schedule schedule-test watch schedule-team redis-up redis-test redis-schedule redis-schedule-test redis-schedule-team redis-stop redis-logs build-enqueue
+.PHONY: help live live-dev emulator stop logs schedule schedule-test watch schedule-team redis-up redis-test redis-schedule redis-schedule-test redis-schedule-team redis-stop redis-logs build-enqueue
 
 BLUE  := \033[0;34m
 GREEN := \033[0;32m
@@ -35,6 +35,13 @@ help: ## Show available targets
 live: ## Start handler and tasks queue with live game data APIs (.env.home)
 	@podman-compose -f docker-compose.yml -f docker-compose.live.yml up --build -d
 	@printf "$(GREEN)[OK]$(NC) Started\n"
+	@printf "  Backend:        http://localhost:8080\n"
+	@printf "  Tasks emulator: http://localhost:8123\n"
+	@printf "View logs: make logs  |  Stop: make stop\n"
+
+live-dev: ## Start with live game data APIs but use development APNs channel IDs (.env.home + dev channels)
+	@podman-compose -f docker-compose.yml -f docker-compose.live.yml -f docker-compose.dev-channels.yml up --build -d
+	@printf "$(GREEN)[OK]$(NC) Started (development APNs channels)\n"
 	@printf "  Backend:        http://localhost:8080\n"
 	@printf "  Tasks emulator: http://localhost:8123\n"
 	@printf "View logs: make logs  |  Stop: make stop\n"

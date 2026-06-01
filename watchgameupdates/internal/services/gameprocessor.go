@@ -65,9 +65,10 @@ func (gp *GameProcessor) ProcessGameUpdate(payload models.Payload) ProcessResult
 			log.Printf("ERROR: Failed to fetch and parse MoneyPuck data for game %s: %v", payload.Game.ID, err)
 		}
 
-		// Populate game state (period/time) from play-by-play data.
+		// Populate fields sourced from play-by-play data (not MoneyPuck CSV).
 		if gameData != nil {
 			gameData["gameState"] = FormatGameState(lastPlay)
+			gameData["lastPlayType"] = lastPlay.TypeDescKey
 		}
 
 		// Only run shootout adjustment when the fetch succeeded — a partial map

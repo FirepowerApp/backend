@@ -63,10 +63,20 @@ func (s *Service) SendGameEventNotifications(game Game, gameData map[string]stri
 		return
 	}
 
+	// Fields sourced from Game (not the MoneyPuck data map) — notifiers that
+	// declare these in GetRequiredDataKeys can read them from a single map.
+	enriched := map[string]string{
+		"homeTeamAbbrev": game.HomeTeam.Abbrev,
+		"awayTeamAbbrev": game.AwayTeam.Abbrev,
+	}
+	for k, v := range gameData {
+		enriched[k] = v
+	}
+
 	for i, notifier := range s.notifiers {
 		data := map[string]string{}
 		for _, key := range notifier.GetRequiredDataKeys() {
-			if val, ok := gameData[key]; ok {
+			if val, ok := enriched[key]; ok {
 				data[key] = val
 			} else {
 				log.Printf("WARNING: Required data key '%s' not found in game data for notifier %d", key, i)

@@ -13,15 +13,17 @@ package liveactivity
 //         "stale-date": 1234568890,       // update only: now + 90s
 //         "dismissal-date": 1234569490,   // end only: now + 10min
 //         "content-state": {
-//           "sport":     "nhl",
-//           "homeTeam":  "BOS",
-//           "awayTeam":  "NYR",
-//           "homeScore": 2,
-//           "awayScore": 1,
-//           "homeXG":    2.4,
-//           "awayXG":    1.8,
-//           "gameState": "14:32 left, 2nd period",
-//           "lastEvent": "Goal scored"
+//           "sport":       "nhl",
+//           "homeTeam":    "BOS",
+//           "awayTeam":    "NYR",
+//           "homeScore":   2,
+//           "awayScore":   1,
+//           "homeXG":      2.4,
+//           "awayXG":      1.8,
+//           "gameState":   "14:32 left, 2nd period",
+//           "eventType":   "goal",       // "goal"|"penalty"|"period_end"|"" (empty = no event)
+//           "eventDetail": "",           // scorer name when pipeline lands; empty until then
+//           "eventTeam":   "BOS"         // tricode of team that caused the event
 //         }
 //       }
 //     }
@@ -51,15 +53,17 @@ type dispatchEnvelope struct {
 }
 
 type contentState struct {
-	Sport     string  `json:"sport"`
-	HomeTeam  string  `json:"homeTeam"`
-	AwayTeam  string  `json:"awayTeam"`
-	HomeScore int     `json:"homeScore"`
-	AwayScore int     `json:"awayScore"`
-	HomeXG    float64 `json:"homeXG"`
-	AwayXG    float64 `json:"awayXG"`
-	GameState string  `json:"gameState"`
-	LastEvent string  `json:"lastEvent"`
+	Sport       string  `json:"sport"`
+	HomeTeam    string  `json:"homeTeam"`
+	AwayTeam    string  `json:"awayTeam"`
+	HomeScore   int     `json:"homeScore"`
+	AwayScore   int     `json:"awayScore"`
+	HomeXG      float64 `json:"homeXG"`
+	AwayXG      float64 `json:"awayXG"`
+	GameState   string  `json:"gameState"`
+	EventType   string  `json:"eventType"`   // "goal"|"penalty"|"period_end"|""
+	EventDetail string  `json:"eventDetail"` // scorer name when available; "" until then
+	EventTeam   string  `json:"eventTeam"`   // scoring/penalised team tricode; "" if unknown
 }
 
 type apsEnvelope struct {
@@ -113,7 +117,7 @@ func BuildDispatchMessage(req NotificationRequest, useDevChannels bool) (string,
 	}
 
 	env := dispatchEnvelope{
-		Channels: channels,
+		Channels: channelsForTeams(homeAbbrev, awayAbbrev),
 		Payload:  json.RawMessage(payloadBytes),
 	}
 
@@ -128,20 +132,41 @@ func buildContentState(req NotificationRequest) (contentState, error) {
 	homeScore := parseIntSafe(req.Data["homeTeamGoals"])
 	awayScore := parseIntSafe(req.Data["awayTeamGoals"])
 
+	eventType, eventTeam := classifyEvent(req.Data["lastPlayType"], req.Data)
+
 	return contentState{
-		Sport:     "nhl",
-		HomeTeam:  strings.ToUpper(req.Data["homeTeamAbbrev"]),
-		AwayTeam:  strings.ToUpper(req.Data["awayTeamAbbrev"]),
-		HomeScore: homeScore,
-		AwayScore: awayScore,
-		HomeXG:    safeXG(req.Data["homeTeamExpectedGoals"]),
-		AwayXG:    safeXG(req.Data["awayTeamExpectedGoals"]),
-		GameState: req.Data["gameState"],
-		LastEvent: formatLastEvent(req.Data["lastPlayType"]),
+		Sport:       "nhl",
+		HomeTeam:    strings.ToUpper(req.Data["homeTeamAbbrev"]),
+		AwayTeam:    strings.ToUpper(req.Data["awayTeamAbbrev"]),
+		HomeScore:   homeScore,
+		AwayScore:   awayScore,
+		HomeXG:      safeXG(req.Data["homeTeamExpectedGoals"]),
+		AwayXG:      safeXG(req.Data["awayTeamExpectedGoals"]),
+		GameState:   req.Data["gameState"],
+		EventType:   eventType,
+		EventDetail: "", // scorer name: empty until the play-by-play pipeline lands (TODO)
+		EventTeam:   eventTeam,
 	}, nil
 }
 
-// safeXG parses an xG string, returning 0 for empty, unparseable, NaN, or Inf values.
+// classifyEvent returns (eventType, eventTeam) for the current play.
+// eventDetail (scorer name) is a separate TODO — see planning/todos.md.
+func classifyEvent(playType string, data map[string]string) (eventType, eventTeam string) {
+	switch playType {
+	case "goal":
+		return "goal", strings.ToUpper(data["eventTeamAbbrev"])
+	case "penalty":
+		return "penalty", strings.ToUpper(data["eventTeamAbbrev"])
+	case "period-end":
+		return "period_end", ""
+	case "game-end":
+		return "period_end", ""
+	default:
+		return "", ""
+	}
+}
+
+// safeXG parses an xG string and guards against NaN/Inf (CRITICAL Gap 2B).
 func safeXG(s string) float64 {
 	if s == "" {
 		return 0
@@ -162,26 +187,6 @@ func parseIntSafe(s string) int {
 	return v
 }
 
-// formatLastEvent converts a play TypeDescKey to a human-readable string.
-// Empty or unrecognized types return "" safely.
-func formatLastEvent(playType string) string {
-	switch playType {
-	case "goal":
-		return "Goal scored"
-	case "shot-on-goal":
-		return "Shot on goal"
-	case "blocked-shot":
-		return "Shot blocked"
-	case "missed-shot":
-		return "Shot missed"
-	case "period-end":
-		return "Period ended"
-	case "game-end":
-		return "Final"
-	default:
-		return "" // empty string is safe for the iOS lastEvent optional
-	}
-}
 
 // channelsForTeams returns the APNs broadcast channel IDs for the two teams.
 // Teams whose channel ID has not been populated in channels.go are skipped.

@@ -45,6 +45,7 @@ func baseReq() NotificationRequest {
 			"awayTeamAbbrev":        "NYR",
 			"gameState":             "14:32 left, 2nd period",
 			"lastPlayType":          "goal",
+			"eventTeamAbbrev":       "BOS",
 		},
 	}
 }
@@ -56,25 +57,25 @@ func TestBuildDispatchMessage_HappyPath(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		var env dispatchEnvelope
-		if err := json.Unmarshal([]byte(msg), &env); err != nil {
-			t.Fatalf("output is not valid JSON: %v", err)
-		}
+	var env dispatchEnvelope
+	if err := json.Unmarshal([]byte(msg), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
 
-		if len(env.Channels) != 2 {
-			t.Errorf("want 2 channels, got %d", len(env.Channels))
-		}
-		if env.Channels[0] != "chan-BOS" {
-			t.Errorf("want chan-BOS, got %s", env.Channels[0])
-		}
-		if env.Channels[1] != "chan-NYR" {
-			t.Errorf("want chan-NYR, got %s", env.Channels[1])
-		}
+	if len(env.Channels) != 2 {
+		t.Errorf("want 2 channels, got %d", len(env.Channels))
+	}
+	if env.Channels[0] != "nhl-team-BOS" {
+		t.Errorf("want nhl-team-BOS, got %s", env.Channels[0])
+	}
+	if env.Channels[1] != "nhl-team-NYR" {
+		t.Errorf("want nhl-team-NYR, got %s", env.Channels[1])
+	}
 
-		var payload apnsPayload
-		if err := json.Unmarshal(env.Payload, &payload); err != nil {
-			t.Fatalf("payload not valid JSON: %v", err)
-		}
+	var payload apnsPayload
+	if err := json.Unmarshal(env.Payload, &payload); err != nil {
+		t.Fatalf("payload not valid JSON: %v", err)
+	}
 
 		cs := payload.APS.ContentState
 		if cs.HomeScore != 2 {
@@ -165,16 +166,20 @@ func TestBuildDispatchMessage_OneChannelRegistered(t *testing.T) {
 			t.Fatalf("unexpected error when one channel registered: %v", err)
 		}
 
-		var env dispatchEnvelope
-		json.Unmarshal([]byte(msg), &env)
+func TestBuildDispatchMessage_GoalEventFields(t *testing.T) {
+	msg, _ := BuildDispatchMessage(baseReq())
+	cs := unmarshalCS(t, msg)
 
-		if len(env.Channels) != 1 {
-			t.Errorf("want 1 channel, got %d", len(env.Channels))
-		}
-		if env.Channels[0] != "chan-BOS" {
-			t.Errorf("want chan-BOS, got %s", env.Channels[0])
-		}
-	})
+	if cs.EventType != "goal" {
+		t.Errorf("want eventType=goal, got %q", cs.EventType)
+	}
+	if cs.EventTeam != "BOS" {
+		t.Errorf("want eventTeam=BOS, got %q", cs.EventTeam)
+	}
+	// eventDetail empty until scorer pipeline lands
+	if cs.EventDetail != "" {
+		t.Errorf("want eventDetail empty, got %q", cs.EventDetail)
+	}
 }
 
 func TestBuildDispatchMessage_MissingScores(t *testing.T) {
@@ -200,6 +205,94 @@ func TestBuildDispatchMessage_MissingScores(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildDispatchMessage_MissingPlayType_EmptyEvent(t *testing.T) {
+	req := baseReq()
+	delete(req.Data, "lastPlayType")
+	cs := unmarshalCS(t, mustBuild(t, req))
+
+	if cs.EventType != "" {
+		t.Errorf("want empty eventType for missing playType, got %q", cs.EventType)
+	}
+	if cs.EventTeam != "" {
+		t.Errorf("want empty eventTeam for missing playType, got %q", cs.EventTeam)
+	}
+}
+
+func TestBuildDispatchMessage_UnknownPlayType_EmptyEvent(t *testing.T) {
+	req := baseReq()
+	req.Data["lastPlayType"] = "faceoff"
+	cs := unmarshalCS(t, mustBuild(t, req))
+
+	if cs.EventType != "" {
+		t.Errorf("faceoff should produce empty eventType, got %q", cs.EventType)
+	}
+}
+
+func TestBuildDispatchMessage_GameEnded(t *testing.T) {
+	req := baseReq()
+	req.Data["gameState"] = "Final"
+	req.Data["lastPlayType"] = "game-end"
+
+	msg, err := BuildDispatchMessage(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var env dispatchEnvelope
+	json.Unmarshal([]byte(msg), &env)
+
+	var payload apnsPayload
+	json.Unmarshal(env.Payload, &payload)
+
+	if payload.APS.Event != "end" {
+		t.Errorf("want event=end for game-end, got %s", payload.APS.Event)
+	}
+	if payload.APS.DismissalDate == nil {
+		t.Error("want non-nil dismissal-date for game-end")
+	}
+	if payload.APS.StaleDate != nil {
+		t.Error("want nil stale-date for game-end")
+	}
+}
+
+// classifyEvent unit tests
+
+func TestClassifyEvent_Goal(t *testing.T) {
+	et, team := classifyEvent("goal", map[string]string{"eventTeamAbbrev": "bos"})
+	if et != "goal" {
+		t.Errorf("want goal, got %q", et)
+	}
+	if team != "BOS" {
+		t.Errorf("want BOS (uppercased), got %q", team)
+	}
+}
+
+func TestClassifyEvent_PeriodEnd(t *testing.T) {
+	et, team := classifyEvent("period-end", nil)
+	if et != "period_end" {
+		t.Errorf("want period_end, got %q", et)
+	}
+	if team != "" {
+		t.Errorf("want empty team for period-end, got %q", team)
+	}
+}
+
+func TestClassifyEvent_GameEnd(t *testing.T) {
+	et, _ := classifyEvent("game-end", nil)
+	if et != "period_end" {
+		t.Errorf("game-end should map to period_end, got %q", et)
+	}
+}
+
+func TestClassifyEvent_Unknown(t *testing.T) {
+	et, team := classifyEvent("blocked-shot", map[string]string{})
+	if et != "" || team != "" {
+		t.Errorf("unknown play should produce empty fields, got type=%q team=%q", et, team)
+	}
+}
+
+// Existing tests preserved
 
 func TestSafeXG_NaN(t *testing.T) {
 	if got := safeXG("NaN"); got != 0 {
@@ -238,28 +331,13 @@ func TestSafeXG_ActualNaN(t *testing.T) {
 	}
 }
 
-func TestFormatLastEvent(t *testing.T) {
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{"goal", "Goal scored"},
-		{"shot-on-goal", "Shot on goal"},
-		{"blocked-shot", "Shot blocked"},
-		{"missed-shot", "Shot missed"},
-		{"period-end", "Period ended"},
-		{"game-end", "Final"},
-		{"", ""},
-		{"faceoff", ""},
-		{"unknown-type", ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.input, func(t *testing.T) {
-			got := formatLastEvent(tc.input)
-			if got != tc.want {
-				t.Errorf("formatLastEvent(%q) = %q, want %q", tc.input, got, tc.want)
-			}
-		})
+func TestBuildDispatchMessage_MissingScores(t *testing.T) {
+	req := baseReq()
+	delete(req.Data, "homeTeamGoals")
+	delete(req.Data, "awayTeamGoals")
+	cs := unmarshalCS(t, mustBuild(t, req))
+	if cs.HomeScore != 0 || cs.AwayScore != 0 {
+		t.Errorf("missing scores should default to 0, got home=%d away=%d", cs.HomeScore, cs.AwayScore)
 	}
 }
 

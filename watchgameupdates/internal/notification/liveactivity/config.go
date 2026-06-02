@@ -8,11 +8,12 @@ import (
 
 // Config holds APNs credentials for Live Activity broadcast push.
 type Config struct {
-	TeamID  string // 10-char Apple Developer Team ID
-	KeyID   string // .p8 key ID from App Store Connect
-	AuthKey string // contents of .p8 file (not a path, container-friendly)
-	Topic   string // bundle ID, e.g. me.blakenelson.firepower
-	Host    string // api.push.apple.com or api.sandbox.push.apple.com
+	TeamID         string // 10-char Apple Developer Team ID
+	KeyID          string // .p8 key ID from App Store Connect
+	AuthKey        string // contents of .p8 file (not a path, container-friendly)
+	Topic          string // bundle ID, e.g. com.blakenelson.Firepower
+	Host           string // api.push.apple.com or api.sandbox.push.apple.com
+	UseDevChannels bool   // true → use debugChannels (development APNs env); set via APNS_CHANNEL_ENV=development
 }
 
 func LoadConfig() (*Config, error) {
@@ -38,10 +39,11 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return &Config{
-		TeamID:  vars["APNS_TEAM_ID"],
-		KeyID:   vars["APNS_KEY_ID"],
-		AuthKey: vars["APNS_AUTH_KEY"],
-		Topic:   vars["APNS_TOPIC"],
-		Host:    host,
+		TeamID:         vars["APNS_TEAM_ID"],
+		KeyID:          vars["APNS_KEY_ID"],
+		AuthKey:        vars["APNS_AUTH_KEY"],
+		Topic:          vars["APNS_TOPIC"],
+		Host:           host,
+		UseDevChannels: strings.EqualFold(os.Getenv("APNS_CHANNEL_ENV"), "development"),
 	}, nil
 }

@@ -8,21 +8,25 @@ import (
 	. "watchgameupdates/internal/notification"
 )
 
-// withChannels temporarily sets channel IDs in teamChannels for the duration of fn,
-// then restores the originals. Allows tests to exercise the lookup without mutating
-// the real map permanently.
-func withChannels(t *testing.T, ids map[string]string, fn func()) {
+// withChannels temporarily sets channel IDs in the prod or dev map for the duration
+// of fn, then restores the originals. Allows tests to exercise channel lookup without
+// mutating the real maps permanently.
+func withChannels(t *testing.T, ids map[string]string, useDevChannels bool, fn func()) {
 	t.Helper()
+	m := prodChannels
+	if useDevChannels {
+		m = debugChannels
+	}
 	orig := map[string]string{}
-	for k, v := range teamChannels {
+	for k, v := range m {
 		orig[k] = v
 	}
 	for k, v := range ids {
-		teamChannels[k] = v
+		m[k] = v
 	}
 	t.Cleanup(func() {
 		for k, v := range orig {
-			teamChannels[k] = v
+			m[k] = v
 		}
 	})
 	fn()
@@ -46,8 +50,8 @@ func baseReq() NotificationRequest {
 }
 
 func TestBuildDispatchMessage_HappyPath(t *testing.T) {
-	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, func() {
-		msg, err := BuildDispatchMessage(baseReq())
+	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, false, func() {
+		msg, err := BuildDispatchMessage(baseReq(), false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -95,12 +99,12 @@ func TestBuildDispatchMessage_HappyPath(t *testing.T) {
 }
 
 func TestBuildDispatchMessage_GameEnded(t *testing.T) {
-	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, func() {
+	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, false, func() {
 		req := baseReq()
 		req.Data["gameState"] = "Final"
 		req.Data["lastPlayType"] = "game-end"
 
-		msg, err := BuildDispatchMessage(req)
+		msg, err := BuildDispatchMessage(req, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -124,11 +128,11 @@ func TestBuildDispatchMessage_GameEnded(t *testing.T) {
 }
 
 func TestBuildDispatchMessage_NilEventString(t *testing.T) {
-	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, func() {
+	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, false, func() {
 		req := baseReq()
 		delete(req.Data, "lastPlayType")
 
-		msg, err := BuildDispatchMessage(req)
+		msg, err := BuildDispatchMessage(req, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -147,7 +151,7 @@ func TestBuildDispatchMessage_NilEventString(t *testing.T) {
 
 func TestBuildDispatchMessage_NoChannelsRegistered(t *testing.T) {
 	// Both teams have empty channel IDs — should error rather than push to nothing.
-	_, err := BuildDispatchMessage(baseReq())
+	_, err := BuildDispatchMessage(baseReq(), false)
 	if err == nil {
 		t.Fatal("want error when no channel IDs are registered, got nil")
 	}
@@ -155,8 +159,8 @@ func TestBuildDispatchMessage_NoChannelsRegistered(t *testing.T) {
 
 func TestBuildDispatchMessage_OneChannelRegistered(t *testing.T) {
 	// Only home team has a channel ID — push to that one, skip away.
-	withChannels(t, map[string]string{"BOS": "chan-BOS"}, func() {
-		msg, err := BuildDispatchMessage(baseReq())
+	withChannels(t, map[string]string{"BOS": "chan-BOS"}, false, func() {
+		msg, err := BuildDispatchMessage(baseReq(), false)
 		if err != nil {
 			t.Fatalf("unexpected error when one channel registered: %v", err)
 		}
@@ -174,12 +178,12 @@ func TestBuildDispatchMessage_OneChannelRegistered(t *testing.T) {
 }
 
 func TestBuildDispatchMessage_MissingScores(t *testing.T) {
-	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, func() {
+	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, false, func() {
 		req := baseReq()
 		delete(req.Data, "homeTeamGoals")
 		delete(req.Data, "awayTeamGoals")
 
-		msg, err := BuildDispatchMessage(req)
+		msg, err := BuildDispatchMessage(req, false)
 		if err != nil {
 			t.Fatalf("missing scores should not error: %v", err)
 		}
@@ -260,8 +264,8 @@ func TestFormatLastEvent(t *testing.T) {
 }
 
 func TestChannelsForTeams_BothRegistered(t *testing.T) {
-	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, func() {
-		ch := channelsForTeams("BOS", "NYR")
+	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, false, func() {
+		ch := channelsForTeams("BOS", "NYR", false)
 		if len(ch) != 2 {
 			t.Fatalf("want 2 channels, got %d", len(ch))
 		}
@@ -272,15 +276,15 @@ func TestChannelsForTeams_BothRegistered(t *testing.T) {
 }
 
 func TestChannelsForTeams_NoneRegistered(t *testing.T) {
-	ch := channelsForTeams("BOS", "NYR")
+	ch := channelsForTeams("BOS", "NYR", false)
 	if len(ch) != 0 {
 		t.Errorf("want 0 channels when none registered, got %d", len(ch))
 	}
 }
 
 func TestChannelsForTeams_SameTeam(t *testing.T) {
-	withChannels(t, map[string]string{"BOS": "chan-BOS"}, func() {
-		ch := channelsForTeams("BOS", "BOS")
+	withChannels(t, map[string]string{"BOS": "chan-BOS"}, false, func() {
+		ch := channelsForTeams("BOS", "BOS", false)
 		if len(ch) != 1 {
 			t.Errorf("same-team edge case: want 1 channel, got %d", len(ch))
 		}

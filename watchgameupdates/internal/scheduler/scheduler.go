@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"watchgameupdates/internal/models"
@@ -36,19 +37,19 @@ type Scheduler struct {
 	queue            TaskEnqueuer
 	gameMaxDuration  time.Duration
 	shouldNotify     bool
-	teamFilter       string
+	teamFilters      []string // empty = monitor all games
 	notifier         MessageSender
 	includeLiveGames bool
 }
 
 // New creates a new Scheduler.
-func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilter string, notifier MessageSender, includeLiveGames bool) *Scheduler {
+func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilters []string, notifier MessageSender, includeLiveGames bool) *Scheduler {
 	return &Scheduler{
 		fetcher:          fetcher,
 		queue:            q,
 		gameMaxDuration:  time.Duration(gameMaxDurationHours) * time.Hour,
 		shouldNotify:     shouldNotify,
-		teamFilter:       teamFilter,
+		teamFilters:      teamFilters,
 		notifier:         notifier,
 		includeLiveGames: includeLiveGames,
 	}
@@ -56,6 +57,12 @@ func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours 
 
 // Run fetches the schedule for the given date and enqueues a task for each future game.
 func (s *Scheduler) Run(ctx context.Context, date string) error {
+	if len(s.teamFilters) == 0 {
+		log.Printf("Monitoring ALL teams")
+	} else {
+		log.Printf("Monitoring teams: %v", s.teamFilters)
+	}
+
 	log.Printf("Fetching schedule for %s", date)
 
 	games, err := s.fetcher.FetchSchedule(ctx, date)
@@ -73,9 +80,9 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 	scheduled := 0
 	var scheduledGames []schedule.ScheduleGame
 	for _, game := range games {
-		if s.teamFilter != "" && game.HomeTeam.Abbrev != s.teamFilter && game.AwayTeam.Abbrev != s.teamFilter {
-			log.Printf("Skipping game %d (%s vs %s) - neither team matches filter %s",
-				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, s.teamFilter)
+		if len(s.teamFilters) > 0 && !containsTeam(s.teamFilters, game.HomeTeam.Abbrev) && !containsTeam(s.teamFilters, game.AwayTeam.Abbrev) {
+			log.Printf("Skipping game %d (%s vs %s) - neither team in roster %v",
+				game.ID, game.AwayTeam.Abbrev, game.HomeTeam.Abbrev, s.teamFilters)
 			continue
 		}
 
@@ -136,6 +143,18 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 	}
 
 	return nil
+}
+
+// containsTeam reports whether abbrev is in the roster slice.
+// Normalizes abbrev to uppercase to match the roster (which is uppercased by ParseTeamFilter).
+func containsTeam(roster []string, abbrev string) bool {
+	upper := strings.ToUpper(abbrev)
+	for _, t := range roster {
+		if t == upper {
+			return true
+		}
+	}
+	return false
 }
 
 // formatSchedulerSummary builds a Discord message summarising the scheduled games.

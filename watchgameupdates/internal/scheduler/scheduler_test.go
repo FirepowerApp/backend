@@ -384,6 +384,34 @@ func TestScheduler_Run_TeamFilter(t *testing.T) {
 	}
 }
 
+func TestScheduler_Run_TeamFilterCaseInsensitive(t *testing.T) {
+	// Guard against NHL API returning mixed-case abbrevs while the roster is uppercased.
+	futureTime := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020001,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    gameStateFUT,
+			HomeTeam:     models.Team{Abbrev: "dal", ID: 25}, // lowercase from API
+			AwayTeam:     models.Team{Abbrev: "MTL", ID: 8},
+		},
+	}
+
+	q := &mockQueue{}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true, []string{"DAL"}, nil, false)
+
+	err := s.Run(context.Background(), "2025-10-08")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(q.tasks) != 1 {
+		t.Fatalf("expected 1 task (DAL game matched case-insensitively), got %d", len(q.tasks))
+	}
+}
+
 func TestScheduler_Run_IncludeLiveGames(t *testing.T) {
 	futureTime := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
 	games := []schedule.ScheduleGame{

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"watchgameupdates/internal/models"
@@ -145,9 +146,11 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 }
 
 // containsTeam reports whether abbrev is in the roster slice.
+// Normalizes abbrev to uppercase to match the roster (which is uppercased by ParseTeamFilter).
 func containsTeam(roster []string, abbrev string) bool {
+	upper := strings.ToUpper(abbrev)
 	for _, t := range roster {
-		if t == abbrev {
+		if t == upper {
 			return true
 		}
 	}

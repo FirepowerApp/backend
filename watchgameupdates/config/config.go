@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -30,7 +31,8 @@ type Config struct {
 	ScheduleDate         string
 	GameMaxDurationHours int
 	SchedulerNotify      bool
-	TeamFilter           string
+	TeamFilter           string   // raw value of TEAM_FILTER env var
+	TeamFilters          []string // parsed, normalized roster (empty = monitor all)
 	IncludeLiveGames     bool
 	SchedulerQueue       string // "cloudtasks" (default) or "redis"
 }
@@ -92,6 +94,7 @@ func LoadConfig() *Config {
 		ScheduleFile: os.Getenv("SCHEDULE_FILE"),
 		ScheduleDate: os.Getenv("SCHEDULE_DATE"),
 		TeamFilter:       os.Getenv("TEAM_FILTER"),
+		TeamFilters:      ParseTeamFilter(os.Getenv("TEAM_FILTER")),
 		IncludeLiveGames: os.Getenv("INCLUDE_LIVE_GAMES") == "true",
 		SchedulerQueue:   getEnvOrDefault("SCHEDULER_QUEUE", "cloudtasks"),
 		GameMaxDurationHours: func() int {
@@ -113,6 +116,26 @@ func LoadConfig() *Config {
 			return val == "true"
 		}(),
 	}
+}
+
+// ParseTeamFilter splits a comma-separated TEAM_FILTER value into a
+// deduplicated, trimmed, uppercased slice. Empty input or an all-whitespace/
+// all-comma input returns nil (meaning monitor all games).
+func ParseTeamFilter(raw string) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		abbrev := strings.ToUpper(strings.TrimSpace(part))
+		if abbrev == "" {
+			continue
+		}
+		if _, dup := seen[abbrev]; dup {
+			continue
+		}
+		seen[abbrev] = struct{}{}
+		out = append(out, abbrev)
+	}
+	return out
 }
 
 func getEnvOrDefault(key, defaultVal string) string {

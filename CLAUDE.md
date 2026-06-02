@@ -118,6 +118,7 @@ DISCORD_BOT_TOKEN=
 DISCORD_CHANNEL_ID=          # Discord channel to post game updates
 MESSAGE_INTERVAL_SECONDS=60       # active-play polling interval (default 60)
 PERIOD_END_INTERVAL_SECONDS=1200  # post-period-end wait before next poll (default 1200)
+TEAM_FILTER=DAL,CAR,VGK           # comma-separated NHL team abbrevs to monitor; empty = all teams
 
 # Live Activity APNs (optional — set LIVEACTIVITY_PUSH_ENABLED=true to enable)
 LIVEACTIVITY_PUSH_ENABLED=

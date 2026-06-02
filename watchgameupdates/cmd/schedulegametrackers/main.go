@@ -47,7 +47,7 @@ func main() {
 	defer notifService.Close()
 
 	// Create and run scheduler
-	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, cfg.TeamFilter, notifService, cfg.IncludeLiveGames)
+	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, cfg.TeamFilters, notifService, cfg.IncludeLiveGames)
 	if err := s.Run(ctx, date); err != nil {
 		log.Fatalf("Scheduler failed: %v", err)
 	}

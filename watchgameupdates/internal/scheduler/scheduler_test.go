@@ -66,7 +66,7 @@ func TestScheduler_Run_SchedulesFutureGames(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "", nil, false)
+	s := New(fetcher, q, 5, true, nil, nil, false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -139,7 +139,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "", nil, false)
+	s := New(fetcher, q, 5, true, nil, nil, false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -162,7 +162,7 @@ func TestScheduler_Run_SkipsNonFutureGames(t *testing.T) {
 func TestScheduler_Run_NoGames(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: nil}
-	s := New(fetcher, q, 5, true, "", nil, false)
+	s := New(fetcher, q, 5, true, nil, nil, false)
 
 	err := s.Run(context.Background(), "2025-07-15")
 	if err != nil {
@@ -190,7 +190,7 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
 	maxHours := 5
-	s := New(fetcher, q, maxHours, false, "", nil, false)
+	s := New(fetcher, q, maxHours, false, nil, nil, false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -229,7 +229,7 @@ func TestScheduler_Run_ExecutionEndCalculation(t *testing.T) {
 func TestScheduler_Run_FetcherError(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{err: fmt.Errorf("NHL API unavailable")}
-	s := New(fetcher, q, 5, true, "", nil, false)
+	s := New(fetcher, q, 5, true, nil, nil, false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err == nil {
@@ -265,7 +265,7 @@ func TestScheduler_Run_EnqueueErrorContinues(t *testing.T) {
 	// Fail on the first enqueue, succeed on the second
 	q := &mockQueue{failOn: 1}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "", nil, false)
+	s := New(fetcher, q, 5, true, nil, nil, false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -296,7 +296,7 @@ func TestScheduler_Run_InvalidStartTime(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "", nil, false)
+	s := New(fetcher, q, 5, true, nil, nil, false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -323,7 +323,7 @@ func TestScheduler_Run_GameIDConversion(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "", nil, false)
+	s := New(fetcher, q, 5, true, nil, nil, false)
 
 	s.Run(context.Background(), "2025-10-08")
 
@@ -364,7 +364,7 @@ func TestScheduler_Run_TeamFilter(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "DAL", nil, false)
+	s := New(fetcher, q, 5, true, []string{"DAL"}, nil, false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -408,7 +408,7 @@ func TestScheduler_Run_IncludeLiveGames(t *testing.T) {
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
 	before := time.Now()
-	s := New(fetcher, q, 5, true, "", nil, true)
+	s := New(fetcher, q, 5, true, nil, nil, true)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -466,7 +466,7 @@ func TestScheduler_Run_LiveGameWithTeamFilter(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "TOR", nil, true)
+	s := New(fetcher, q, 5, true, []string{"TOR"}, nil, true)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -497,7 +497,7 @@ func TestScheduler_Run_LiveGamesSkippedByDefault(t *testing.T) {
 
 	q := &mockQueue{}
 	fetcher := &mockFetcher{games: games}
-	s := New(fetcher, q, 5, true, "", nil, false)
+	s := New(fetcher, q, 5, true, nil, nil, false)
 
 	err := s.Run(context.Background(), "2025-10-08")
 	if err != nil {
@@ -506,5 +506,123 @@ func TestScheduler_Run_LiveGamesSkippedByDefault(t *testing.T) {
 
 	if len(q.tasks) != 0 {
 		t.Fatalf("expected 0 tasks (LIVE skipped by default), got %d", len(q.tasks))
+	}
+}
+
+func TestScheduler_Run_MultiTeamFilter(t *testing.T) {
+	futureTime := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020001,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    gameStateFUT,
+			HomeTeam:     models.Team{Abbrev: "DAL", ID: 25},
+			AwayTeam:     models.Team{Abbrev: "MTL", ID: 8},
+		},
+		{
+			ID:           2025020002,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    gameStateFUT,
+			HomeTeam:     models.Team{Abbrev: "TOR", ID: 10},
+			AwayTeam:     models.Team{Abbrev: "COL", ID: 21},
+		},
+		{
+			ID:           2025020003,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    gameStateFUT,
+			HomeTeam:     models.Team{Abbrev: "BOS", ID: 6},
+			AwayTeam:     models.Team{Abbrev: "NYR", ID: 3},
+		},
+	}
+
+	q := &mockQueue{}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true, []string{"DAL", "COL"}, nil, false)
+
+	err := s.Run(context.Background(), "2025-10-08")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// DAL game and COL game scheduled; BOS vs NYR skipped
+	if len(q.tasks) != 2 {
+		t.Fatalf("expected 2 tasks (DAL and COL games), got %d", len(q.tasks))
+	}
+	scheduled := map[string]bool{
+		q.tasks[0].payload.Game.ID: true,
+		q.tasks[1].payload.Game.ID: true,
+	}
+	if !scheduled["2025020001"] || !scheduled["2025020002"] {
+		t.Errorf("expected games 2025020001 (DAL) and 2025020002 (COL) to be scheduled, got %v", scheduled)
+	}
+}
+
+func TestScheduler_Run_TwoListedTeamsOneGame(t *testing.T) {
+	// CRITICAL: when both teams in a game are in the roster, the game must be
+	// enqueued exactly once (filter is per-game, not per-team).
+	futureTime := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020001,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    gameStateFUT,
+			HomeTeam:     models.Team{Abbrev: "DAL", ID: 25},
+			AwayTeam:     models.Team{Abbrev: "COL", ID: 21},
+		},
+	}
+
+	q := &mockQueue{}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true, []string{"DAL", "COL"}, nil, false)
+
+	err := s.Run(context.Background(), "2025-10-08")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(q.tasks) != 1 {
+		t.Fatalf("expected exactly 1 task when both teams are listed (not 2), got %d", len(q.tasks))
+	}
+	if q.tasks[0].payload.Game.ID != "2025020001" {
+		t.Errorf("expected game 2025020001, got %s", q.tasks[0].payload.Game.ID)
+	}
+}
+
+func TestScheduler_Run_EmptyFilterSchedulesAllGames(t *testing.T) {
+	futureTime := time.Now().Add(2 * time.Hour).Format(time.RFC3339)
+	games := []schedule.ScheduleGame{
+		{
+			ID:           2025020001,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    gameStateFUT,
+			HomeTeam:     models.Team{Abbrev: "DAL", ID: 25},
+			AwayTeam:     models.Team{Abbrev: "MTL", ID: 8},
+		},
+		{
+			ID:           2025020002,
+			GameDate:     "2025-10-08",
+			StartTimeUTC: futureTime,
+			GameState:    gameStateFUT,
+			HomeTeam:     models.Team{Abbrev: "BOS", ID: 6},
+			AwayTeam:     models.Team{Abbrev: "NYR", ID: 3},
+		},
+	}
+
+	q := &mockQueue{}
+	fetcher := &mockFetcher{games: games}
+	s := New(fetcher, q, 5, true, nil, nil, false)
+
+	err := s.Run(context.Background(), "2025-10-08")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(q.tasks) != 2 {
+		t.Fatalf("expected all 2 games scheduled when filter is empty, got %d", len(q.tasks))
 	}
 }

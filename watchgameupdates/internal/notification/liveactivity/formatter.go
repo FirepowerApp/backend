@@ -5,7 +5,7 @@ package liveactivity
 // FormatMessage output shape (parsed by SendNotification):
 //
 //   {
-//     "channels": ["nhl-team-BOS", "nhl-team-NYR"],
+//     "channels": ["<base64-channel-id-1>", "<base64-channel-id-2>"],
 //     "payload": {
 //       "aps": {
 //         "timestamp":  1234567890,
@@ -79,6 +79,7 @@ type apnsPayload struct {
 }
 
 // BuildDispatchMessage produces the JSON string for FormatMessage.
+// useDevChannels selects sandbox APNs channel IDs (debug builds) vs production.
 func BuildDispatchMessage(req NotificationRequest, useDevChannels bool) (string, error) {
 	cs, err := buildContentState(req)
 	if err != nil {
@@ -117,7 +118,7 @@ func BuildDispatchMessage(req NotificationRequest, useDevChannels bool) (string,
 	}
 
 	env := dispatchEnvelope{
-		Channels: channelsForTeams(homeAbbrev, awayAbbrev),
+		Channels: channels,
 		Payload:  json.RawMessage(payloadBytes),
 	}
 
@@ -166,7 +167,7 @@ func classifyEvent(playType string, data map[string]string) (eventType, eventTea
 	}
 }
 
-// safeXG parses an xG string and guards against NaN/Inf (CRITICAL Gap 2B).
+// safeXG parses an xG string and guards against NaN/Inf.
 func safeXG(s string) float64 {
 	if s == "" {
 		return 0
@@ -186,7 +187,6 @@ func parseIntSafe(s string) int {
 	}
 	return v
 }
-
 
 // channelsForTeams returns the APNs broadcast channel IDs for the two teams.
 // Teams whose channel ID has not been populated in channels.go are skipped.

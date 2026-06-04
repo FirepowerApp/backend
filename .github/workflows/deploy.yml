@@ -112,6 +112,9 @@ jobs:
           wait_for_image "${SCHEDULER_IMAGE}"
           echo "Both images verified in registry"
 
+      - name: Apply ConfigMap
+        run: kubectl apply -f k8s/configmap.yaml
+
       - name: Apply handler deployment
         env:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}

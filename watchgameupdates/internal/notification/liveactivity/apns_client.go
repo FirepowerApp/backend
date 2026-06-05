@@ -22,8 +22,14 @@ import (
 )
 
 const (
-	apnsHTTPTimeout       = 10 * time.Second
-	apnsExpirationOffset  = 15 * time.Minute
+	apnsHTTPTimeout = 10 * time.Second
+	// apnsExpiration is sent as the apns-expiration header. "0" tells APNs to
+	// attempt delivery once and not store the message. This is the only value
+	// valid for ALL broadcast channel storage policies: channels created with
+	// the "No Message Stored" policy reject any nonzero expiration with
+	// 400 BadExpirationDate. Live Activity updates are pushed frequently and
+	// each supersedes the last, so single-attempt delivery is acceptable.
+	apnsExpiration        = "0"
 	apnsPriority          = "10"
 	apnsResponseBodyLimit = 512
 )
@@ -61,7 +67,6 @@ func (c *apnsClient) Push(ctx context.Context, channelID string, payload []byte)
 		return fmt.Errorf("get JWT: %w", err)
 	}
 
-	expiration := fmt.Sprintf("%d", time.Now().Add(apnsExpirationOffset).Unix())
 	url := fmt.Sprintf("https://%s/4/broadcasts/apps/%s", c.host, c.bundleID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
@@ -72,7 +77,7 @@ func (c *apnsClient) Push(ctx context.Context, channelID string, payload []byte)
 	req.Header.Set("apns-push-type", "liveactivity")
 	req.Header.Set("apns-channel-id", channelID)
 	req.Header.Set("apns-priority", apnsPriority)
-	req.Header.Set("apns-expiration", expiration)
+	req.Header.Set("apns-expiration", apnsExpiration)
 	req.Header.Set("content-type", "application/json")
 
 	start := time.Now()

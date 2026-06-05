@@ -17,10 +17,6 @@ type Config struct {
 }
 
 func LoadConfig() (*Config, error) {
-	if !strings.EqualFold(os.Getenv("LIVEACTIVITY_PUSH_ENABLED"), "true") {
-		return nil, fmt.Errorf("LIVEACTIVITY_PUSH_ENABLED is not true")
-	}
-
 	vars := map[string]string{
 		"APNS_TEAM_ID":  os.Getenv("APNS_TEAM_ID"),
 		"APNS_KEY_ID":   os.Getenv("APNS_KEY_ID"),

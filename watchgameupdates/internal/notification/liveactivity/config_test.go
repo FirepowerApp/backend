@@ -2,14 +2,6 @@ package liveactivity
 
 import "testing"
 
-func TestLoadConfig_Disabled(t *testing.T) {
-	t.Setenv("LIVEACTIVITY_PUSH_ENABLED", "")
-	_, err := LoadConfig()
-	if err == nil {
-		t.Fatal("expected error when feature disabled, got nil")
-	}
-}
-
 func TestLoadConfig_MissingRequiredVars(t *testing.T) {
 	base := map[string]string{
 		"APNS_TEAM_ID":  "TEAMID1234",
@@ -20,7 +12,6 @@ func TestLoadConfig_MissingRequiredVars(t *testing.T) {
 	for _, missing := range []string{"APNS_TEAM_ID", "APNS_KEY_ID", "APNS_AUTH_KEY", "APNS_TOPIC"} {
 		missing := missing
 		t.Run(missing, func(t *testing.T) {
-			t.Setenv("LIVEACTIVITY_PUSH_ENABLED", "true")
 			for k, v := range base {
 				t.Setenv(k, v)
 			}
@@ -34,7 +25,6 @@ func TestLoadConfig_MissingRequiredVars(t *testing.T) {
 }
 
 func TestLoadConfig_DefaultsHostToProduction(t *testing.T) {
-	t.Setenv("LIVEACTIVITY_PUSH_ENABLED", "true")
 	t.Setenv("APNS_TEAM_ID", "TEAMID1234")
 	t.Setenv("APNS_KEY_ID", "KEYID12345")
 	t.Setenv("APNS_AUTH_KEY", "dummykey")
@@ -51,7 +41,6 @@ func TestLoadConfig_DefaultsHostToProduction(t *testing.T) {
 }
 
 func TestLoadConfig_DevChannelsDefaultsHostToSandbox(t *testing.T) {
-	t.Setenv("LIVEACTIVITY_PUSH_ENABLED", "true")
 	t.Setenv("APNS_TEAM_ID", "TEAMID1234")
 	t.Setenv("APNS_KEY_ID", "KEYID12345")
 	t.Setenv("APNS_AUTH_KEY", "dummykey")
@@ -72,7 +61,6 @@ func TestLoadConfig_DevChannelsDefaultsHostToSandbox(t *testing.T) {
 }
 
 func TestLoadConfig_SandboxHostWithDevChannels(t *testing.T) {
-	t.Setenv("LIVEACTIVITY_PUSH_ENABLED", "true")
 	t.Setenv("APNS_TEAM_ID", "TEAMID1234")
 	t.Setenv("APNS_KEY_ID", "KEYID12345")
 	t.Setenv("APNS_AUTH_KEY", "dummykey")
@@ -92,7 +80,6 @@ func TestLoadConfig_SandboxHostWithDevChannels(t *testing.T) {
 // A sandbox host with production channels (or vice versa) is exactly what
 // produces APNs 403 BadEnvironmentKeyInToken — LoadConfig must reject it.
 func TestLoadConfig_HostChannelEnvMismatchRejected(t *testing.T) {
-	t.Setenv("LIVEACTIVITY_PUSH_ENABLED", "true")
 	t.Setenv("APNS_TEAM_ID", "TEAMID1234")
 	t.Setenv("APNS_KEY_ID", "KEYID12345")
 	t.Setenv("APNS_AUTH_KEY", "dummykey")

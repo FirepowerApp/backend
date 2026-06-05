@@ -8,7 +8,7 @@ import (
 
 	"watchgameupdates/config"
 	"watchgameupdates/internal/models"
-	"watchgameupdates/internal/notification"
+	"watchgameupdates/internal/notification/notifiers"
 	"watchgameupdates/internal/services"
 
 	"github.com/hibiken/asynq"
@@ -53,12 +53,8 @@ func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task
 
 	// Build processor with fresh notification service
 	fetcher := &services.HTTPGameDataFetcher{}
-	var notificationService *notification.Service
-	if payload.ShouldNotify != nil {
-		notificationService = notification.NewServiceWithNotificationFlag(*payload.ShouldNotify)
-	} else {
-		notificationService = notification.NewService()
-	}
+	shouldNotify := payload.ShouldNotify == nil || *payload.ShouldNotify
+	notificationService := notifiers.New(shouldNotify)
 	defer notificationService.Close()
 
 	processor := &services.GameProcessor{

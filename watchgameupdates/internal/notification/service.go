@@ -20,41 +20,14 @@ func NewService() *Service {
 }
 
 func NewServiceWithNotificationFlag(shouldNotify bool) *Service {
-	service := &Service{
+	return &Service{
 		notifiers:    []Notifier{},
 		shouldNotify: shouldNotify,
 	}
-
-	service.discoverNotifiers()
-	return service
 }
 
 func (s *Service) GetAllRequiredDataKeys() []string {
 	return s.allRequiredDataKeys
-}
-
-func (s *Service) discoverNotifiers() {
-	if discordNotifier := s.tryCreateDiscordNotifier(); discordNotifier != nil {
-		s.allRequiredDataKeys = append(s.allRequiredDataKeys, discordNotifier.GetRequiredDataKeys()...)
-		s.notifiers = append(s.notifiers, discordNotifier)
-	}
-}
-
-func (s *Service) tryCreateDiscordNotifier() Notifier {
-	config, err := LoadDiscordConfigFromEnv()
-	if err != nil {
-		log.Printf("Discord notifier config not found or invalid: %v", err)
-		return nil
-	}
-
-	notifier, err := NewDiscordNotifier(config)
-	if err != nil {
-		log.Printf("Failed to create Discord notifier: %v", err)
-		return nil
-	}
-
-	log.Printf("Discord notifier created successfully")
-	return notifier
 }
 
 func (s *Service) SendGameEventNotifications(game Game, gameData map[string]string) {

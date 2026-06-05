@@ -56,11 +56,7 @@ func New() (*LiveActivityNotifier, error) {
 		return nil, fmt.Errorf("create APNs client: %w", err)
 	}
 
-	channelEnv := "production"
-	if cfg.UseDevChannels {
-		channelEnv = "development"
-	}
-	log.Printf("LiveActivity notifier initialized: host=%s topic=%s channels=%s", cfg.Host, cfg.Topic, channelEnv)
+	log.Printf("LiveActivity notifier initialized: host=%s topic=%s channels=%s", cfg.Host, cfg.Topic, channelEnvName(cfg.UseDevChannels))
 	return &LiveActivityNotifier{client: client, useDevChannels: cfg.UseDevChannels}, nil
 }
 

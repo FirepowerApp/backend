@@ -33,9 +33,29 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
+	// Environment is a single concept: the broadcast channel IDs (apns-channel-id)
+	// and the APNs host must belong to the same environment. If they disagree, APNs
+	// rejects the push with 403 BadEnvironmentKeyInToken. APNS_CHANNEL_ENV is the
+	// single source of truth; the host is derived from it. APNS_HOST may still be
+	// set as an explicit override (e.g. a test proxy), but it must match the
+	// channel environment or we fail fast at startup rather than at push time.
+	useDevChannels := strings.EqualFold(os.Getenv("APNS_CHANNEL_ENV"), "development")
+	expectedHost := "api.push.apple.com"
+	if useDevChannels {
+		expectedHost = "api.sandbox.push.apple.com"
+	}
+
 	host := os.Getenv("APNS_HOST")
-	if host == "" {
-		host = "api.push.apple.com"
+	switch host {
+	case "":
+		host = expectedHost
+	case expectedHost:
+		// explicit override agrees with channel environment
+	default:
+		return nil, fmt.Errorf(
+			"APNS_HOST %q does not match APNS_CHANNEL_ENV (%s channels expect host %q); "+
+				"mismatched channel/host environments cause APNs 403 BadEnvironmentKeyInToken",
+			host, channelEnvName(useDevChannels), expectedHost)
 	}
 
 	return &Config{
@@ -44,6 +64,13 @@ func LoadConfig() (*Config, error) {
 		AuthKey:        vars["APNS_AUTH_KEY"],
 		Topic:          vars["APNS_TOPIC"],
 		Host:           host,
-		UseDevChannels: strings.EqualFold(os.Getenv("APNS_CHANNEL_ENV"), "development"),
+		UseDevChannels: useDevChannels,
 	}, nil
+}
+
+func channelEnvName(useDevChannels bool) string {
+	if useDevChannels {
+		return "development"
+	}
+	return "production"
 }

@@ -69,8 +69,9 @@ backend/
 │   │   ├── handlers/            # HTTP handlers (Cloud Tasks mode)
 │   │   ├── services/            # Shared business logic & game processor
 │   │   ├── tasks/               # Cloud Tasks client + Asynq task types/handler
-│   │   ├── notification/        # Discord and LiveActivity (APNs) notifiers
-│   │   │   └── liveactivity/    # iOS Live Activity APNs broadcast push
+│   │   ├── notification/        # Notifier interface, Discord, and service dispatcher
+│   │   │   ├── liveactivity/    # iOS Live Activity APNs broadcast push
+│   │   │   └── notifiers/       # Factory: reads NOTIFIERS env and wires notifiers
 │   │   └── models/              # Data models
 │   ├── config/                  # Configuration management
 │   ├── Dockerfile               # Container definition (HTTP mode)
@@ -233,7 +234,52 @@ DISCORD_BOT_TOKEN=your_bot_token_here
 
 **`.env.example`** - Template for custom configurations (includes both Cloud Tasks and Redis vars, and APNs vars for Live Activity)
 
-Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. To enable iOS Live Activity push, set `LIVEACTIVITY_PUSH_ENABLED=true` and populate the `APNS_*` vars — see `.env.example` for the full list.
+Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. To enable iOS Live Activity push, include `liveactivity` in `NOTIFIERS` and populate the `APNS_*` vars — see `.env.example` for the full list.
+
+### Notifiers
+
+Active notifiers are controlled by the `NOTIFIERS` environment variable — set in `k8s/configmap.yaml` for Kubernetes, or in your local `.env.*` file. It accepts a comma-separated list of notifier names:
+
+| Name | Description | Required secrets |
+|---|---|---|
+| `liveactivity` | iOS Live Activity APNs broadcast push | `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_AUTH_KEY`, `APNS_TOPIC` |
+| `discord` | Discord channel messages | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
+
+```env
+# LiveActivity only (cluster default)
+NOTIFIERS=liveactivity
+
+# Both notifiers active
+NOTIFIERS=liveactivity,discord
+
+# Notifications disabled
+NOTIFIERS=
+```
+
+Secrets for both notifiers live in the `app-secrets` Kubernetes Secret and are always mounted in the pod, regardless of which notifiers are currently enabled. This means you can add or remove a notifier by only changing the configmap value — no secret changes and no image rebuild.
+
+#### Activating or deactivating a notifier without a rebuild
+
+This applies when the notifier is already implemented in the image running in the cluster. Edit `NOTIFIERS` in the configmap and roll the pod to pick up the change:
+
+```bash
+# Option A — edit the configmap in-cluster directly
+kubectl -n firepower edit configmap app-config
+# change NOTIFIERS: "liveactivity"
+# to     NOTIFIERS: "liveactivity,discord"
+
+# Option B — apply an updated k8s/configmap.yaml from the repo
+kubectl apply -f k8s/configmap.yaml
+
+# Then restart the pod either way
+kubectl -n firepower rollout restart deployment/handler
+kubectl -n firepower rollout status deployment/handler
+
+# Verify the right notifiers registered at startup
+kubectl -n firepower logs -l app=backend --tail=30
+```
+
+> Adding a brand-new notifier type (one not yet implemented in the codebase) requires a code change, a new image build, and a full deployment before it can be enabled via the configmap.
 
 **Tuning reschedule intervals:** `MESSAGE_INTERVAL_SECONDS` controls how frequently the
 handler re-checks a live game (default 60s). When a period ends, the service uses

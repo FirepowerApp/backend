@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"watchgameupdates/config"
-	"watchgameupdates/internal/notification"
+	"watchgameupdates/internal/notification/notifiers"
 	"watchgameupdates/internal/queue"
 	"watchgameupdates/internal/schedule"
 	"watchgameupdates/internal/scheduler"
@@ -43,7 +43,7 @@ func main() {
 	date := schedule.ResolveTargetDate(cfg.ScheduleDate)
 
 	// Create notification service for scheduler completion summary
-	notifService := notification.NewServiceWithNotificationFlag(cfg.SchedulerNotify)
+	notifService := notifiers.New(cfg.SchedulerNotify)
 	defer notifService.Close()
 
 	// Create and run scheduler

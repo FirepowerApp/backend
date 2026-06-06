@@ -20,6 +20,9 @@ spec:
           ports:
             - containerPort: 8080
           args: ["-mode=http"]
+          env:
+            - name: NOTIFIERS
+              value: "liveactivity"
           envFrom:
             - configMapRef:
                 name: app-config

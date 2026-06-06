@@ -17,4 +17,3 @@ data:
   SCHEDULER_SHOULD_NOTIFY: "true"
   USE_TASKS_EMULATOR: "true"
   TEAM_FILTER: "DAL,CAR,VGK"
-  NOTIFIERS: "liveactivity"

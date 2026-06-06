@@ -19,6 +19,8 @@ spec:
               env:
                 - name: SCHEDULER_QUEUE
                   value: cloudtasks
+                - name: NOTIFIERS
+                  value: "discord"
               envFrom:
                 - configMapRef:
                     name: app-config

@@ -10,6 +10,7 @@ import (
 	"watchgameupdates/config"
 	"watchgameupdates/internal/handlers"
 	"watchgameupdates/internal/models"
+	"watchgameupdates/internal/notification"
 	"watchgameupdates/internal/notification/notifiers"
 	"watchgameupdates/internal/services"
 	"watchgameupdates/internal/tasks"
@@ -18,34 +19,37 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-func httpHandler(w http.ResponseWriter, r *http.Request) {
+func makeHTTPHandler(svc *notification.Service) http.HandlerFunc {
 	fetcher := &services.HTTPGameDataFetcher{}
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
+		var payload models.Payload
+		if err := json.Unmarshal(body, &payload); err != nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			return
+		}
+
+		shouldNotify := payload.ShouldNotify == nil || *payload.ShouldNotify
+		handlers.WatchGameUpdatesHandler(
+			w,
+			r,
+			fetcher,
+			svc.WithShouldNotify(shouldNotify),
+			payload)
 	}
-
-	var payload models.Payload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
-		return
-	}
-
-	shouldNotify := payload.ShouldNotify == nil || *payload.ShouldNotify
-	notificationService := notifiers.New(shouldNotify)
-
-	handlers.WatchGameUpdatesHandler(
-		w,
-		r,
-		fetcher,
-		notificationService,
-		payload)
 }
 
 func startHTTPMode(cfg *config.Config) {
 	log.Println("Starting in HTTP mode (Cloud Tasks)")
+
+	// Build the notification service once so JWT signers and HTTP connections are
+	// reused across requests. Per-request shouldNotify is applied via WithShouldNotify.
+	sharedNotifService := notifiers.New(true)
 
 	log.Printf("Config loaded:")
 	log.Printf("  APP_ENV:                    %s", cfg.Env)
@@ -58,7 +62,7 @@ func startHTTPMode(cfg *config.Config) {
 	log.Printf("  MESSAGE_INTERVAL_SECONDS:   %d", cfg.MessageIntervalSeconds)
 	log.Printf("  PERIOD_END_INTERVAL_SECONDS:%d", cfg.PeriodEndIntervalSeconds)
 
-	funcframework.RegisterHTTPFunction("/", httpHandler)
+	funcframework.RegisterHTTPFunction("/", makeHTTPHandler(sharedNotifService))
 	if err := funcframework.Start("8080"); err != nil {
 		log.Fatalf("Failed to start function: %v", err)
 	}

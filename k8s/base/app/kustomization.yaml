@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Application base: everything the deploy.yml workflow owns and that is
+# version-coupled to the code — the workloads plus the ConfigMap. Shipping the
+# ConfigMap here means a code change that needs new config lands atomically with
+# the new image (the image bump rolls the pods, which read the new config).
+# Image tags stay as the ${IMAGE_TAG} placeholder that deploy.yml fills via
+# envsubst. Namespace and per-environment overrides come from overlays.
+resources:
+  - configmap.yaml
+  - deployment-handler.yaml
+  - deployment-cloudtasks.yaml
+  - cronjob-scheduler.yaml

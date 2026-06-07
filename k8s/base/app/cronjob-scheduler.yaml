@@ -2,7 +2,6 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: scheduler
-  namespace: firepower
 spec:
   schedule: "0 5 * * *"
   concurrencyPolicy: Forbid

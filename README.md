@@ -238,7 +238,7 @@ Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. T
 
 ### Notifiers
 
-Active notifiers are controlled by the `NOTIFIERS` environment variable — set in `k8s/configmap.yaml` for Kubernetes, or in your local `.env.*` file. It accepts a comma-separated list of notifier names:
+Active notifiers are controlled by the `NOTIFIERS` environment variable — set per workload in the Kubernetes manifests under `k8s/base/app/` (with per-environment overrides in `k8s/overlays/<env>/app/`), or in your local `.env.*` file. It accepts a comma-separated list of notifier names:
 
 | Name | Description | Required secrets |
 |---|---|---|
@@ -260,16 +260,18 @@ Secrets for both notifiers live in the `app-secrets` Kubernetes Secret and are a
 
 #### Activating or deactivating a notifier without a rebuild
 
-This applies when the notifier is already implemented in the image running in the cluster. Edit `NOTIFIERS` in the configmap and roll the pod to pick up the change:
+This applies when the notifier is already implemented in the image running in the cluster. `NOTIFIERS` is an env var on the handler/scheduler workloads, so edit it on the deployment and roll the pod to pick up the change:
 
 ```bash
-# Option A — edit the configmap in-cluster directly
-kubectl -n firepower edit configmap app-config
+# Option A — edit the deployment in-cluster directly
+kubectl -n firepower edit deployment handler
 # change NOTIFIERS: "liveactivity"
 # to     NOTIFIERS: "liveactivity,discord"
 
-# Option B — apply an updated k8s/configmap.yaml from the repo
-kubectl apply -f k8s/configmap.yaml
+# Option B — change it in the repo and re-deploy
+# prod default lives in k8s/base/app/deployment-handler.yaml;
+# per-environment overrides live in k8s/overlays/<env>/app/kustomization.yaml
+kubectl apply -f <(kubectl kustomize k8s/overlays/production/app | IMAGE_TAG=<tag> envsubst '${IMAGE_TAG}')
 
 # Then restart the pod either way
 kubectl -n firepower rollout restart deployment/handler

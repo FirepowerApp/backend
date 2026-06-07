@@ -1,0 +1,60 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Staging workloads + config. Empties NOTIFIERS on the handler and scheduler so
+# that notifiers/factory.go registers ZERO notifiers -> staging cannot send any
+# Discord or APNs notification (the code-level no-noise guarantee), and applies
+# staging config overrides. SCHEDULER_SHOULD_NOTIFY=false is a backstop.
+namespace: firepower-staging
+
+resources:
+  - ../../../base/app
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: app-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: app-config
+      data:
+        APP_ENV: "staging"
+        SCHEDULER_SHOULD_NOTIFY: "false"
+
+  - target:
+      kind: Deployment
+      name: handler
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: handler
+      spec:
+        template:
+          spec:
+            containers:
+              - name: handler
+                env:
+                  - name: NOTIFIERS
+                    value: ""
+
+  - target:
+      kind: CronJob
+      name: scheduler
+    patch: |-
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: scheduler
+      spec:
+        jobTemplate:
+          spec:
+            template:
+              spec:
+                containers:
+                  - name: scheduler
+                    env:
+                      - name: NOTIFIERS
+                        value: ""

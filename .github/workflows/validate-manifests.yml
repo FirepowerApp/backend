@@ -22,12 +22,15 @@ jobs:
           tar xf kubeconform.tar.gz kubeconform
           sudo install kubeconform /usr/local/bin/kubeconform
 
-      - name: Render and validate manifests
+      - name: Render and validate overlays
         env:
           IMAGE_TAG: ci-validate
         run: |
           mkdir rendered
-          for f in k8s/*.yaml; do
-            envsubst < "$f" > "rendered/$(basename "$f")"
+          for env in staging production; do
+            for layer in infra app; do
+              kubectl kustomize "k8s/overlays/${env}/${layer}" \
+                | envsubst '${IMAGE_TAG}' > "rendered/${env}-${layer}.yaml"
+            done
           done
           kubeconform -strict -summary -output pretty rendered/

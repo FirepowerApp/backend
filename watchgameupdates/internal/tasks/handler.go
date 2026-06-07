@@ -8,6 +8,7 @@ import (
 
 	"watchgameupdates/config"
 	"watchgameupdates/internal/models"
+	"watchgameupdates/internal/notification"
 	"watchgameupdates/internal/notification/notifiers"
 	"watchgameupdates/internal/services"
 
@@ -21,12 +22,15 @@ type TaskEnqueuer interface {
 
 // WatchGameUpdatesHandler processes game update tasks from the Redis queue.
 type WatchGameUpdatesHandler struct {
-	cfg      *config.Config
-	enqueuer TaskEnqueuer
+	cfg                 *config.Config
+	enqueuer            TaskEnqueuer
+	notificationService *notification.Service
 }
 
 func NewWatchGameUpdatesHandler(cfg *config.Config, enqueuer TaskEnqueuer) *WatchGameUpdatesHandler {
-	return &WatchGameUpdatesHandler{cfg: cfg, enqueuer: enqueuer}
+	// Build once so JWT signers and HTTP connections survive across task invocations.
+	svc := notifiers.New(true)
+	return &WatchGameUpdatesHandler{cfg: cfg, enqueuer: enqueuer, notificationService: svc}
 }
 
 func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task) error {
@@ -51,15 +55,11 @@ func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task
 		return nil
 	}
 
-	// Build processor with fresh notification service
 	fetcher := &services.HTTPGameDataFetcher{}
 	shouldNotify := payload.ShouldNotify == nil || *payload.ShouldNotify
-	notificationService := notifiers.New(shouldNotify)
-	defer notificationService.Close()
-
 	processor := &services.GameProcessor{
 		Fetcher:             fetcher,
-		NotificationService: notificationService,
+		NotificationService: h.notificationService.WithShouldNotify(shouldNotify),
 	}
 
 	result := processor.ProcessGameUpdate(payload)

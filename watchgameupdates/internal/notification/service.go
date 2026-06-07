@@ -175,3 +175,15 @@ func (s *Service) RegisterNotifier(n Notifier) {
 	s.allRequiredDataKeys = append(s.allRequiredDataKeys, n.GetRequiredDataKeys()...)
 	s.notifiers = append(s.notifiers, n)
 }
+
+// WithShouldNotify returns a per-request view of this service with the given
+// notification flag. Notifier instances (and their JWT/connection state) are
+// shared with the original — call this on a long-lived service to avoid
+// recreating notifiers on every request.
+func (s *Service) WithShouldNotify(shouldNotify bool) *Service {
+	return &Service{
+		notifiers:           s.notifiers,
+		allRequiredDataKeys: s.allRequiredDataKeys,
+		shouldNotify:        shouldNotify,
+	}
+}

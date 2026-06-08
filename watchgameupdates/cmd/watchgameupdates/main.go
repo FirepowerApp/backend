@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"io"
@@ -62,7 +63,13 @@ func startHTTPMode(cfg *config.Config) {
 	log.Printf("  MESSAGE_INTERVAL_SECONDS:   %d", cfg.MessageIntervalSeconds)
 	log.Printf("  PERIOD_END_INTERVAL_SECONDS:%d", cfg.PeriodEndIntervalSeconds)
 
-	funcframework.RegisterHTTPFunction("/", makeHTTPHandler(sharedNotifService))
+	// Use the typed registration entrypoint so the handler signature is checked
+	// at compile time. RegisterHTTPFunction takes interface{} and panics at
+	// startup if the dynamic type is not exactly func(http.ResponseWriter,
+	// *http.Request) — http.HandlerFunc is a named type and fails that assertion.
+	if err := funcframework.RegisterHTTPFunctionContext(context.Background(), "/", makeHTTPHandler(sharedNotifService)); err != nil {
+		log.Fatalf("Failed to register function: %v", err)
+	}
 	if err := funcframework.Start("8080"); err != nil {
 		log.Fatalf("Failed to start function: %v", err)
 	}

@@ -4,10 +4,13 @@ name: Deploy to Kubernetes
 # environment by applying k8s/overlays/<env>/app.
 #
 # Triggers:
-#   - workflow_run: a successful main build auto-deploys to PRODUCTION.
+#   - workflow_run: a successful main build auto-deploys to STAGING.
 #   - workflow_dispatch: pick the environment (default staging) and run from any
 #     branch. Optionally pin an explicit image tag; otherwise the tag is
 #     computed as <branch>-<sha7>, matching the docker-push naming.
+#
+# Production promotion is always manual: run workflow_dispatch with
+# environment=production and the image tag that passed staging verification.
 #
 # Scaffolding (namespace, ConfigMap, Secret, Services) is owned by the
 # "Infrastructure" workflow and must already exist for the target environment.
@@ -76,7 +79,7 @@ jobs:
         id: env
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            ENVIRONMENT=production
+            ENVIRONMENT=staging
           else
             ENVIRONMENT="${{ inputs.environment }}"
           fi

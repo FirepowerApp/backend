@@ -135,7 +135,7 @@ func TestScheduleNextCheck_EnqueuesCalled(t *testing.T) {
 		Game: models.Game{ID: "2024030411"},
 	}
 
-	err := h.scheduleNextCheck(payload)
+	err := h.scheduleNextCheck(payload, time.Duration(cfg.MessageIntervalSeconds)*time.Second)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestScheduleNextCheck_EnqueueError(t *testing.T) {
 		Game: models.Game{ID: "2024030411"},
 	}
 
-	err := h.scheduleNextCheck(payload)
+	err := h.scheduleNextCheck(payload, time.Duration(cfg.MessageIntervalSeconds)*time.Second)
 	if err == nil {
 		t.Error("Expected error when enqueue fails, got nil")
 	}

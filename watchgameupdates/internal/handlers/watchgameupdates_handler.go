@@ -53,6 +53,11 @@ func WatchGameUpdatesHandler(
 	if result.ShouldReschedule {
 		cfg := config.LoadConfig()
 		interval := services.RescheduleInterval(result.LastPlay, result.MaxPeriods, cfg)
+		if result.RetryAfterDataError {
+			// MoneyPuck data was unparseable and nothing was sent; ignore the
+			// play-type interval and retry soon to pick up the corrected file.
+			interval = services.ParseErrorRetryInterval
+		}
 		if err := scheduleNextCheck(payload, interval); err != nil {
 			log.Printf("Failed to schedule next check: %v", err)
 			http.Error(w, "Failed to schedule next check", http.StatusInternalServerError)

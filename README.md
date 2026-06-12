@@ -77,6 +77,13 @@ backend/
 │   ├── Dockerfile               # Container definition (HTTP mode)
 │   └── Dockerfile.worker        # Container definition (worker mode)
 ├── localCloudTasksTest/         # Test client for Cloud Tasks
+├── k8s/                         # Kubernetes manifests (kustomize)
+│   ├── base/
+│   │   ├── app/                 # Workloads + ConfigMap (owned by deploy pipeline)
+│   │   └── infra/               # Services (owned by infrastructure pipeline)
+│   └── overlays/
+│       ├── production/          # firepower namespace, prod config
+│       └── staging/             # firepower-staging namespace, silent notifiers
 ├── docs/                        # Documentation
 │   └── queue-visualization.md   # Asynqmon dashboard guide
 ├── docker-compose.yml           # Cloud Tasks orchestration
@@ -567,15 +574,36 @@ GET https://moneypuck.com/moneypuck/gameData/{season}/{game_id}.csv
 
 ## Deployment
 
-### Cloud Tasks (HTTP Mode)
+### Kubernetes (self-hosted cluster)
+
+The cluster uses two namespaces: `firepower` (production) and `firepower-staging` (staging). Manifests live in `k8s/` as kustomize overlays. Two GitHub Actions workflows manage deployment:
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| **Infrastructure** | Manual (`workflow_dispatch`) | Creates namespace, services, and `app-secrets` for the chosen environment |
+| **Deploy to Kubernetes** | Auto on `main` push → staging; manual for production | Applies ConfigMap + workloads with the chosen image tag |
+
+**Standing up a new environment:**
+```bash
+# 1. Run Infrastructure workflow (Actions tab → Infrastructure → Run workflow → staging)
+# 2. Run Deploy workflow (Actions tab → Deploy to Kubernetes → Run workflow → staging, image_tag=latest)
+```
+
+**Promoting a staging-verified image to production:**
+```bash
+# Run Deploy workflow manually: environment=production, image_tag=main-<sha>
+# where <sha> is the 7-char commit SHA you verified in staging
+```
+
+The staging overlay silences all notifiers (`NOTIFIERS=""` on both handler and scheduler) so staging runs never post to real Discord channels or fire APNs pushes.
+
+### Cloud Tasks (HTTP Mode — local/manual)
 
 ```bash
 cd watchgameupdates
 podman build -t crashthecrease-backend .
 podman run -p 8080:8080 crashthecrease-backend
 ```
-
-Deploys on Google Cloud Run / Cloud Functions with Google Cloud Tasks.
 
 ### Redis Worker Mode
 

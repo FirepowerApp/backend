@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -10,6 +11,11 @@ import (
 	"watchgameupdates/internal/models"
 	"watchgameupdates/internal/notification"
 )
+
+// ParseErrorRetryInterval is how long to wait before retrying a game check after
+// the MoneyPuck CSV failed to parse. The malformed file is usually transient, so
+// we retry the same scenario shortly rather than notifying with missing data.
+const ParseErrorRetryInterval = 1 * time.Minute
 
 // GameProcessor contains the shared game-check logic used by both the HTTP handler
 // and the asynq worker handler. It is stateless and safe for concurrent use.
@@ -23,6 +29,10 @@ type ProcessResult struct {
 	ShouldReschedule bool
 	LastPlay         models.Play
 	MaxPeriods       *int
+	// RetryAfterDataError is set when the MoneyPuck CSV could not be parsed. No
+	// notification was sent this cycle; the caller should reschedule a short retry
+	// (ParseErrorRetryInterval) rather than the normal play-type interval.
+	RetryAfterDataError bool
 }
 
 // ShouldSkipExecution returns true if the current time is past the execution end window.
@@ -61,6 +71,22 @@ func (gp *GameProcessor) ProcessGameUpdate(payload models.Payload) ProcessResult
 
 		requiredKeys := gp.NotificationService.GetAllRequiredDataKeys()
 		gameData, err := gp.Fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
+
+		// A CSV parse error means MoneyPuck served a malformed (usually transient)
+		// file. Notifying now would push a zeroed content-state (0-0, empty
+		// gameState → "Pregame" on iOS). Instead, send nothing and retry shortly so
+		// the next fetch can pick up the corrected file.
+		if errors.Is(err, ErrCSVParse) {
+			log.Printf("WARNING: MoneyPuck CSV parse error for game %s; skipping notification and retrying in %s: %v",
+				payload.Game.ID, ParseErrorRetryInterval, err)
+			return ProcessResult{
+				ShouldReschedule:    true,
+				LastPlay:            lastPlay,
+				MaxPeriods:          maxPeriods,
+				RetryAfterDataError: true,
+			}
+		}
+
 		if err != nil {
 			log.Printf("ERROR: Failed to fetch and parse MoneyPuck data for game %s: %v", payload.Game.ID, err)
 		}

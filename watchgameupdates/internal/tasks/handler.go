@@ -65,7 +65,13 @@ func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task
 	result := processor.ProcessGameUpdate(payload)
 
 	if result.ShouldReschedule {
-		if err := h.scheduleNextCheck(payload); err != nil {
+		interval := time.Duration(h.cfg.MessageIntervalSeconds) * time.Second
+		if result.RetryAfterDataError {
+			// MoneyPuck data was unparseable and nothing was sent; retry soon to
+			// pick up the corrected file.
+			interval = services.ParseErrorRetryInterval
+		}
+		if err := h.scheduleNextCheck(payload, interval); err != nil {
 			return fmt.Errorf("failed to schedule next check for game %s: %w", payload.Game.ID, err)
 		}
 	}
@@ -73,13 +79,12 @@ func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task
 	return nil
 }
 
-func (h *WatchGameUpdatesHandler) scheduleNextCheck(payload models.Payload) error {
+func (h *WatchGameUpdatesHandler) scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 	task, err := NewWatchGameUpdatesTask(payload)
 	if err != nil {
 		return fmt.Errorf("failed to create task: %w", err)
 	}
 
-	interval := time.Duration(h.cfg.MessageIntervalSeconds) * time.Second
 	info, err := h.enqueuer.Enqueue(task, asynq.ProcessIn(interval))
 	if err != nil {
 		return fmt.Errorf("failed to enqueue task: %w", err)

@@ -2,11 +2,18 @@ package services
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 )
+
+// ErrCSVParse classifies a failure to parse the MoneyPuck CSV (e.g. a transient
+// malformed row such as a bare quote in an unquoted field). It is distinct from
+// HTTP/network failures so callers can choose to retry shortly instead of
+// notifying with missing data. Test for it with errors.Is(err, ErrCSVParse).
+var ErrCSVParse = errors.New("moneypuck CSV parse error")
 
 type GameDataFetcher interface {
 	FetchGameData(gameID string) ([][]string, error)
@@ -125,6 +132,12 @@ func (f *HTTPGameDataFetcher) FetchGameData(gameID string) ([][]string, error) {
 	records, err := reader.ReadAll()
 	if err != nil {
 		log.Printf("ERROR: Failed to parse CSV data for game %s: %v", gameID, err)
+		// A *csv.ParseError means MoneyPuck served a malformed file; tag it as
+		// ErrCSVParse so callers can retry. Other (I/O) errors pass through as-is.
+		var parseErr *csv.ParseError
+		if errors.As(err, &parseErr) {
+			return nil, fmt.Errorf("%w: %w", ErrCSVParse, err)
+		}
 		return nil, err
 	}
 

@@ -88,8 +88,10 @@ jobs:
             production) NAMESPACE=firepower ;;
             *) echo "ERROR: unknown environment '$ENVIRONMENT'"; exit 1 ;;
           esac
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
-          echo "namespace=$NAMESPACE"   >> "$GITHUB_OUTPUT"
+          echo "namespace=$NAMESPACE"     >> "$GITHUB_OUTPUT"
+          echo "owner=$OWNER"             >> "$GITHUB_OUTPUT"
           echo "Deploying to $ENVIRONMENT (namespace $NAMESPACE)"
 
       - name: Compute image tag
@@ -116,8 +118,8 @@ jobs:
       - name: Verify images are available in registry
         env:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+          OWNER: ${{ steps.env.outputs.owner }}
         run: |
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           HANDLER_IMAGE="ghcr.io/${OWNER}/handler:${IMAGE_TAG}"
           SCHEDULER_IMAGE="ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
           TIMEOUT=300
@@ -126,19 +128,20 @@ jobs:
 
           wait_for_image() {
             local image="$1"
+            local elapsed=0
             echo "Waiting for image: ${image}"
             while true; do
               if docker manifest inspect "${image}" >/dev/null 2>&1; then
                 echo "Image available: ${image}"
                 return 0
               fi
-              if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
+              if [ "${elapsed}" -ge "${TIMEOUT}" ]; then
                 echo "ERROR: Timed out after ${TIMEOUT}s waiting for ${image}"
                 return 1
               fi
-              echo "Not available yet (${ELAPSED}s elapsed), retrying in ${INTERVAL}s..."
+              echo "Not available yet (${elapsed}s elapsed), retrying in ${INTERVAL}s..."
               sleep "${INTERVAL}"
-              ELAPSED=$((ELAPSED + INTERVAL))
+              elapsed=$((elapsed + INTERVAL))
             done
           }
 
@@ -170,8 +173,8 @@ jobs:
       - name: Verify scheduler cronjob updated
         env:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+          OWNER: ${{ steps.env.outputs.owner }}
         run: |
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           EXPECTED="ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
           ACTUAL=$(kubectl get cronjob scheduler -n "${{ steps.env.outputs.namespace }}" -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}')
           echo "Expected image: ${EXPECTED}"

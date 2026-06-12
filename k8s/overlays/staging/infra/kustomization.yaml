@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Staging scaffolding: creates the firepower-staging namespace and applies the
+# infra base (services). Config now lives in the app overlay.
+namespace: firepower-staging
+
+resources:
+  - namespace.yaml
+  - ../../../base/infra

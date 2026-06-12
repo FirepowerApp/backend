@@ -1,11 +1,42 @@
 name: Deploy to Kubernetes
 
+# Deploys the application workloads (handler, cloudtasks, scheduler) to a target
+# environment by applying k8s/overlays/<env>/app.
+#
+# Triggers:
+#   - workflow_run: a successful main build auto-deploys to STAGING.
+#   - workflow_dispatch: pick the environment (default staging) and run from any
+#     branch. Optionally pin an explicit image tag; otherwise the tag is
+#     computed as <branch>-<sha7>, matching the docker-push naming.
+#
+# Production promotion is always manual: run workflow_dispatch with
+# environment=production and the image tag that passed staging verification.
+#
+# Scaffolding (namespace, ConfigMap, Secret, Services) is owned by the
+# "Infrastructure" workflow and must already exist for the target environment.
 on:
   workflow_run:
     workflows: ["Build and Push Docker Images"]
     branches: [main]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+        required: true
+      image_tag:
+        description: >-
+          Existing image tag in GHCR to deploy (e.g. latest, or a pinned
+          main-<sha7>). Defaults to latest = the current main image. Staging
+          reuses prod images, so you do NOT need to build a staging-specific
+          image.
+        required: false
+        default: latest
 
 jobs:
   deploy:
@@ -44,33 +75,38 @@ jobs:
           echo "ERROR: Could not reach cluster after 50s"
           exit 1
 
+      - name: Resolve environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            ENVIRONMENT=staging
+          else
+            ENVIRONMENT="${{ inputs.environment }}"
+          fi
+          case "$ENVIRONMENT" in
+            staging)    NAMESPACE=firepower-staging ;;
+            production) NAMESPACE=firepower ;;
+            *) echo "ERROR: unknown environment '$ENVIRONMENT'"; exit 1 ;;
+          esac
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "namespace=$NAMESPACE"     >> "$GITHUB_OUTPUT"
+          echo "owner=$OWNER"             >> "$GITHUB_OUTPUT"
+          echo "Deploying to $ENVIRONMENT (namespace $NAMESPACE)"
+
       - name: Compute image tag
         id: image-tag
         run: |
+          # Auto deploys from a main build pin the exact image just built.
+          # Manual runs deploy an existing GHCR tag (default: latest), so no
+          # staging-specific images need to be created.
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             BRANCH=$(echo "${{ github.event.workflow_run.head_branch }}" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
             SHA=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+            echo "tag=${BRANCH}-${SHA}" >> "$GITHUB_OUTPUT"
           else
-            BRANCH=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
-            SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+            echo "tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
           fi
-          echo "tag=${BRANCH}-${SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Validate manifests
-        env:
-          IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
-        run: |
-          mkdir rendered
-          for f in k8s/deployment-handler.yaml k8s/cronjob-scheduler.yaml; do
-            envsubst < "$f" > "rendered/$(basename "$f")"
-          done
-          cp k8s/deployment-cloudtasks.yaml k8s/namespace.yaml \
-             k8s/configmap.yaml k8s/service-backend.yaml k8s/service-cloudtasks.yaml \
-             rendered/
-          for f in rendered/*.yaml; do
-            echo "Checking: $f"
-            kubectl apply --dry-run=client -f "$f"
-          done
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -82,8 +118,8 @@ jobs:
       - name: Verify images are available in registry
         env:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+          OWNER: ${{ steps.env.outputs.owner }}
         run: |
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           HANDLER_IMAGE="ghcr.io/${OWNER}/handler:${IMAGE_TAG}"
           SCHEDULER_IMAGE="ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
           TIMEOUT=300
@@ -92,19 +128,20 @@ jobs:
 
           wait_for_image() {
             local image="$1"
+            local elapsed=0
             echo "Waiting for image: ${image}"
             while true; do
               if docker manifest inspect "${image}" >/dev/null 2>&1; then
                 echo "Image available: ${image}"
                 return 0
               fi
-              if [ "${ELAPSED}" -ge "${TIMEOUT}" ]; then
+              if [ "${elapsed}" -ge "${TIMEOUT}" ]; then
                 echo "ERROR: Timed out after ${TIMEOUT}s waiting for ${image}"
                 return 1
               fi
-              echo "Not available yet (${ELAPSED}s elapsed), retrying in ${INTERVAL}s..."
+              echo "Not available yet (${elapsed}s elapsed), retrying in ${INTERVAL}s..."
               sleep "${INTERVAL}"
-              ELAPSED=$((ELAPSED + INTERVAL))
+              elapsed=$((elapsed + INTERVAL))
             done
           }
 
@@ -112,35 +149,34 @@ jobs:
           wait_for_image "${SCHEDULER_IMAGE}"
           echo "Both images verified in registry"
 
-      - name: Apply ConfigMap
-        run: kubectl apply -f k8s/configmap.yaml
-
-      - name: Apply handler deployment
+      - name: Render app overlay
         env:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
-        run: envsubst < k8s/deployment-handler.yaml | kubectl apply -f -
+        run: |
+          kubectl kustomize "k8s/overlays/${{ steps.env.outputs.environment }}/app" \
+            | envsubst '${IMAGE_TAG}' > rendered-app.yaml
+          echo "----- rendered workloads -----"
+          cat rendered-app.yaml
 
-      - name: Apply cloudtasks deployment
-        run: kubectl apply -f k8s/deployment-cloudtasks.yaml
+      - name: Validate rendered manifests
+        run: kubectl apply --dry-run=client -f rendered-app.yaml
 
-      - name: Apply scheduler cronjob
-        env:
-          IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
-        run: envsubst < k8s/cronjob-scheduler.yaml | kubectl apply -f -
+      - name: Apply workloads
+        run: kubectl apply -f rendered-app.yaml
 
       - name: Wait for handler rollout
-        run: kubectl rollout status deployment/handler -n firepower --timeout=300s
+        run: kubectl rollout status deployment/handler -n "${{ steps.env.outputs.namespace }}" --timeout=300s
 
       - name: Wait for cloudtasks rollout
-        run: kubectl rollout status deployment/cloudtasks -n firepower --timeout=300s
+        run: kubectl rollout status deployment/cloudtasks -n "${{ steps.env.outputs.namespace }}" --timeout=300s
 
       - name: Verify scheduler cronjob updated
         env:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
+          OWNER: ${{ steps.env.outputs.owner }}
         run: |
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           EXPECTED="ghcr.io/${OWNER}/scheduler:${IMAGE_TAG}"
-          ACTUAL=$(kubectl get cronjob scheduler -n firepower -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}')
+          ACTUAL=$(kubectl get cronjob scheduler -n "${{ steps.env.outputs.namespace }}" -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}')
           echo "Expected image: ${EXPECTED}"
           echo "Actual image:   ${ACTUAL}"
           if [ "${ACTUAL}" != "${EXPECTED}" ]; then

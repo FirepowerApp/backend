@@ -77,6 +77,13 @@ backend/
 │   ├── Dockerfile               # Container definition (HTTP mode)
 │   └── Dockerfile.worker        # Container definition (worker mode)
 ├── localCloudTasksTest/         # Test client for Cloud Tasks
+├── k8s/                         # Kubernetes manifests (kustomize)
+│   ├── base/
+│   │   ├── app/                 # Workloads + ConfigMap (owned by deploy pipeline)
+│   │   └── infra/               # Services (owned by infrastructure pipeline)
+│   └── overlays/
+│       ├── production/          # firepower namespace, prod config
+│       └── staging/             # firepower-staging namespace, silent notifiers
 ├── docs/                        # Documentation
 │   └── queue-visualization.md   # Asynqmon dashboard guide
 ├── docker-compose.yml           # Cloud Tasks orchestration
@@ -238,7 +245,7 @@ Update `DISCORD_BOT_TOKEN` and `DISCORD_CHANNEL_ID` in your environment files. T
 
 ### Notifiers
 
-Active notifiers are controlled by the `NOTIFIERS` environment variable — set in `k8s/configmap.yaml` for Kubernetes, or in your local `.env.*` file. It accepts a comma-separated list of notifier names:
+Active notifiers are controlled by the `NOTIFIERS` environment variable — set per workload in the Kubernetes manifests under `k8s/base/app/` (with per-environment overrides in `k8s/overlays/<env>/app/`), or in your local `.env.*` file. It accepts a comma-separated list of notifier names:
 
 | Name | Description | Required secrets |
 |---|---|---|
@@ -260,16 +267,18 @@ Secrets for both notifiers live in the `app-secrets` Kubernetes Secret and are a
 
 #### Activating or deactivating a notifier without a rebuild
 
-This applies when the notifier is already implemented in the image running in the cluster. Edit `NOTIFIERS` in the configmap and roll the pod to pick up the change:
+This applies when the notifier is already implemented in the image running in the cluster. `NOTIFIERS` is an env var on the handler/scheduler workloads, so edit it on the deployment and roll the pod to pick up the change:
 
 ```bash
-# Option A — edit the configmap in-cluster directly
-kubectl -n firepower edit configmap app-config
+# Option A — edit the deployment in-cluster directly
+kubectl -n firepower edit deployment handler
 # change NOTIFIERS: "liveactivity"
 # to     NOTIFIERS: "liveactivity,discord"
 
-# Option B — apply an updated k8s/configmap.yaml from the repo
-kubectl apply -f k8s/configmap.yaml
+# Option B — change it in the repo and re-deploy
+# prod default lives in k8s/base/app/deployment-handler.yaml;
+# per-environment overrides live in k8s/overlays/<env>/app/kustomization.yaml
+kubectl apply -f <(kubectl kustomize k8s/overlays/production/app | IMAGE_TAG=<tag> envsubst '${IMAGE_TAG}')
 
 # Then restart the pod either way
 kubectl -n firepower rollout restart deployment/handler
@@ -565,15 +574,36 @@ GET https://moneypuck.com/moneypuck/gameData/{season}/{game_id}.csv
 
 ## Deployment
 
-### Cloud Tasks (HTTP Mode)
+### Kubernetes (self-hosted cluster)
+
+The cluster uses two namespaces: `firepower` (production) and `firepower-staging` (staging). Manifests live in `k8s/` as kustomize overlays. Two GitHub Actions workflows manage deployment:
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| **Infrastructure** | Manual (`workflow_dispatch`) | Creates namespace, services, and `app-secrets` for the chosen environment |
+| **Deploy to Kubernetes** | Auto on `main` push → staging; manual for production | Applies ConfigMap + workloads with the chosen image tag |
+
+**Standing up a new environment:**
+```bash
+# 1. Run Infrastructure workflow (Actions tab → Infrastructure → Run workflow → staging)
+# 2. Run Deploy workflow (Actions tab → Deploy to Kubernetes → Run workflow → staging, image_tag=latest)
+```
+
+**Promoting a staging-verified image to production:**
+```bash
+# Run Deploy workflow manually: environment=production, image_tag=main-<sha>
+# where <sha> is the 7-char commit SHA you verified in staging
+```
+
+The staging overlay silences all notifiers (`NOTIFIERS=""` on both handler and scheduler) so staging runs never post to real Discord channels or fire APNs pushes.
+
+### Cloud Tasks (HTTP Mode — local/manual)
 
 ```bash
 cd watchgameupdates
 podman build -t crashthecrease-backend .
 podman run -p 8080:8080 crashthecrease-backend
 ```
-
-Deploys on Google Cloud Run / Cloud Functions with Google Cloud Tasks.
 
 ### Redis Worker Mode
 

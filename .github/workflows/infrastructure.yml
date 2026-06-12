@@ -1,7 +1,20 @@
 name: Infrastructure
 
+# Stands up the relatively static scaffolding (namespace, ConfigMap, Services,
+# Secret) for a target environment. Manual only: pick the environment and run
+# it from any branch via the Actions tab. Workloads are deployed separately by
+# the "Deploy to Kubernetes" workflow.
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+        required: true
 
 jobs:
   setup-infrastructure:
@@ -37,22 +50,25 @@ jobs:
           echo "ERROR: Could not reach cluster after 50s"
           exit 1
 
-      - name: Apply namespace
-        run: kubectl apply -f k8s/namespace.yaml
+      - name: Resolve namespace
+        id: env
+        run: |
+          case "${{ inputs.environment }}" in
+            staging)    echo "namespace=firepower-staging" >> "$GITHUB_OUTPUT" ;;
+            production) echo "namespace=firepower"         >> "$GITHUB_OUTPUT" ;;
+            *) echo "ERROR: unknown environment '${{ inputs.environment }}'"; exit 1 ;;
+          esac
 
-      - name: Apply ConfigMap
-        run: kubectl apply -f k8s/configmap.yaml
+      - name: Validate infrastructure overlay
+        run: kubectl apply -k "k8s/overlays/${{ inputs.environment }}/infra" --dry-run=client
 
-      - name: Apply backend service
-        run: kubectl apply -f k8s/service-backend.yaml
-
-      - name: Apply cloudtasks service
-        run: kubectl apply -f k8s/service-cloudtasks.yaml
+      - name: Apply infrastructure overlay
+        run: kubectl apply -k "k8s/overlays/${{ inputs.environment }}/infra"
 
       - name: Create app-secrets
         run: |
           kubectl create secret generic app-secrets \
-            --namespace=firepower \
+            --namespace="${{ steps.env.outputs.namespace }}" \
             --from-literal=DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }} \
             --from-literal=DISCORD_CHANNEL_ID=${{ secrets.DISCORD_CHANNEL_ID }} \
             --from-literal=APNS_TEAM_ID=${{ secrets.APNS_TEAM_ID }} \

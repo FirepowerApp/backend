@@ -5,21 +5,3 @@ namespace: firepower
 
 resources:
   - ../../../base/app
-
-patches:
-  - target:
-      kind: Deployment
-      name: handler
-    patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: handler
-      spec:
-        template:
-          spec:
-            containers:
-              - name: handler
-                env:
-                  - name: NOTIFIERS
-                    value: ""

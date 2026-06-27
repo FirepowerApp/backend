@@ -83,7 +83,8 @@ backend/
 │   │   └── infra/               # Services (owned by infrastructure pipeline)
 │   └── overlays/
 │       ├── production/          # firepower namespace, prod config
-│       └── staging/             # firepower-staging namespace, silent notifiers
+│       ├── staging/             # firepower-staging namespace
+│       └── staging-offseason/   # staging + emulator data routing (Jun 22–Sep 30)
 ├── docs/                        # Documentation
 │   └── queue-visualization.md   # Asynqmon dashboard guide
 ├── docker-compose.yml           # Cloud Tasks orchestration
@@ -595,7 +596,9 @@ The cluster uses two namespaces: `firepower` (production) and `firepower-staging
 # where <sha> is the 7-char commit SHA you verified in staging
 ```
 
-The staging overlay silences all notifiers (`NOTIFIERS=""` on both handler and scheduler) so staging runs never post to real Discord channels or fire APNs pushes.
+Staging sends real notifications (LiveActivity APNs push and Discord) using the same notifier config as production.
+
+**Offseason routing (Jun 22–Sep 30):** When a staging deploy lands inside this window, the pipeline automatically renders the `staging-offseason` overlay instead of `staging`. This points all three data-source env vars (`PLAYBYPLAY_API_BASE_URL`, `STATS_API_BASE_URL`, `SCHEDULE_API_BASE_URL`) at the in-cluster `gamedataemulator` Service and sets `TEAM_FILTER=DAL,CAR,VGK,CHI` so the emulator's schedule is exercised immediately. The handler and scheduler run unchanged — they just read URLs and stay oblivious to the swap. The routing reverts automatically on the first deploy after Sep 30.
 
 ### Cloud Tasks (HTTP Mode — local/manual)
 

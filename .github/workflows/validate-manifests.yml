@@ -33,4 +33,7 @@ jobs:
                 | envsubst '${IMAGE_TAG}' > "rendered/${env}-${layer}.yaml"
             done
           done
+          # staging-offseason has no infra overlay (shares firepower-staging namespace/services)
+          kubectl kustomize "k8s/overlays/staging-offseason/app" \
+            | envsubst '${IMAGE_TAG}' > "rendered/staging-offseason-app.yaml"
           kubeconform -strict -summary -output pretty rendered/

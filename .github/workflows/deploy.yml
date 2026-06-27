@@ -77,6 +77,7 @@ jobs:
 
       - name: Resolve environment
         id: env
+        shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             ENVIRONMENT=staging
@@ -89,10 +90,21 @@ jobs:
             *) echo "ERROR: unknown environment '$ENVIRONMENT'"; exit 1 ;;
           esac
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          # Offseason routing: Jun 22 – Sep 30 (any year) in UTC.
+          # Force base-10 parsing to avoid octal interpretation of 06xx dates.
+          OVERLAY="$ENVIRONMENT"
+          if [ "$ENVIRONMENT" = "staging" ]; then
+            MMDD=$(date -u +%m%d)
+            if [ $((10#$MMDD)) -ge 622 ] && [ $((10#$MMDD)) -le 930 ]; then
+              OVERLAY="staging-offseason"
+              echo "Offseason window active (${MMDD} UTC) -> routing staging to game data emulator"
+            fi
+          fi
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "namespace=$NAMESPACE"     >> "$GITHUB_OUTPUT"
           echo "owner=$OWNER"             >> "$GITHUB_OUTPUT"
-          echo "Deploying to $ENVIRONMENT (namespace $NAMESPACE)"
+          echo "overlay=$OVERLAY"         >> "$GITHUB_OUTPUT"
+          echo "Deploying to $ENVIRONMENT (namespace $NAMESPACE, overlay $OVERLAY)"
 
       - name: Compute image tag
         id: image-tag
@@ -153,7 +165,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.image-tag.outputs.tag }}
         run: |
-          kubectl kustomize "k8s/overlays/${{ steps.env.outputs.environment }}/app" \
+          kubectl kustomize "k8s/overlays/${{ steps.env.outputs.overlay }}/app" \
             | envsubst '${IMAGE_TAG}' > rendered-app.yaml
           echo "----- rendered workloads -----"
           cat rendered-app.yaml

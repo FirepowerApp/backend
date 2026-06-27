@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../staging/app
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: app-config
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: app-config
+      data:
+        # Offseason (Jun 22 – Sep 30): pull simulated data from the in-cluster
+        # game data emulator so the full pipeline keeps running with no live games.
+        PLAYBYPLAY_API_BASE_URL: "http://gamedataemulator:8125"
+        STATS_API_BASE_URL: "http://gamedataemulator:8124"
+        SCHEDULE_API_BASE_URL: "http://gamedataemulator:8125"
+        # CHI added because the emulator's first-week slate (FLA/CHI/NYR/PIT/LAK/COL)
+        # does not overlap with DAL/CAR/VGK; adding CHI ensures ≥1 game/day is
+        # scheduled immediately. DAL/CAR/VGK naturally appear in the richer Jul-1+
+        # slate and are kept so they continue to be exercised later in the offseason.
+        TEAM_FILTER: "DAL,CAR,VGK,CHI"

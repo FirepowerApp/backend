@@ -10,7 +10,7 @@ var debugChannels = map[string]string{
 	"CAR": "5GIeaFVyEfEAAObg6VLmpQ==",
 	"CBJ": "",
 	"CGY": "",
-	"CHI": "",
+	"CHI": "VeHR2HNPEfEAAIIz9BtJIg==",
 	"COL": "+pSGy0vgEfEAAKqhstn/Jg==",
 	"DAL": "",
 	"DET": "",

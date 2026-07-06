@@ -168,6 +168,8 @@ func classifyEvent(playType string, data map[string]string) (eventType, eventTea
 }
 
 // safeXG parses an xG string and guards against NaN/Inf.
+// The value passes through exactly as sourced — no rounding. Display
+// formatting is the iOS client's responsibility (see CLAUDE.md).
 func safeXG(s string) float64 {
 	if s == "" {
 		return 0
@@ -177,7 +179,7 @@ func safeXG(s string) float64 {
 		log.Printf("WARN: invalid xG value %q, defaulting to 0", s)
 		return 0
 	}
-	return math.Round(v*10) / 10
+	return v
 }
 
 func parseIntSafe(s string) int {

@@ -293,8 +293,17 @@ func TestSafeXG_Empty(t *testing.T) {
 }
 
 func TestSafeXG_ValidFloat(t *testing.T) {
-	if got := safeXG("2.456"); got != 2.5 {
-		t.Errorf("safeXG(2.456) = %v, want 2.5", got)
+	if got := safeXG("2.456"); got != 2.456 {
+		t.Errorf("safeXG(2.456) = %v, want 2.456 (exact passthrough, no rounding)", got)
+	}
+}
+
+func TestSafeXG_NoRounding(t *testing.T) {
+	// The client owns display formatting; the backend must not round.
+	for in, want := range map[string]float64{"0.76": 0.76, "0.38": 0.38, "1.05": 1.05} {
+		if got := safeXG(in); got != want {
+			t.Errorf("safeXG(%s) = %v, want %v (exact passthrough)", in, got, want)
+		}
 	}
 }
 

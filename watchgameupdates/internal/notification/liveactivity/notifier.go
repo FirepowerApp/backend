@@ -113,6 +113,7 @@ func (n *LiveActivityNotifier) SendNotification(ctx context.Context, message str
 
 // pushToAll pushes payload to all channels in parallel; returns first error encountered.
 func (n *LiveActivityNotifier) pushToAll(ctx context.Context, channels []string, payload []byte) error {
+	log.Printf("APNs dispatch: channels=%v payload=%s", channels, payload)
 	errs := make(chan error, len(channels))
 	for _, ch := range channels {
 		go func(ch string) {

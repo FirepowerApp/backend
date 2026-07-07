@@ -103,6 +103,24 @@ make watch TEAM=COL    # E2E live test: schedule today's game and follow logs
 | Mock MoneyPuck API | 8124 |
 | Mock NHL API | 8125 |
 
+## Data Formatting Responsibility
+
+The backend sends **exact values** as sourced from upstream data (NHL API, MoneyPuck).
+The iOS client is **solely responsible for display formatting**.
+
+- Never round, truncate, or otherwise reduce the precision of numeric values
+  (e.g., xG) before putting them in a push payload. Send them exactly as parsed.
+- Never apply display formatting server-side (decimal places, locale, units,
+  abbreviations). The client decides how values are rendered (e.g., the iOS
+  widget formats xG with `%.2f`).
+- The backend's job is validation only: reject/zero malformed values (NaN, Inf,
+  unparseable strings — see `safeXG` in `notification/liveactivity/formatter.go`),
+  then pass the value through untouched.
+
+Rationale: the wire format (`content-state` in the APNs payload) is a data
+contract, not a presentation layer. Rounding server-side silently caps the
+precision every current and future client can display.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env.home` or `.env.local` and populate:

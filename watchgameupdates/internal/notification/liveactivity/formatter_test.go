@@ -191,14 +191,18 @@ func TestBuildDispatchMessage_GameEnded(t *testing.T) {
 
 func TestBuildDispatchMessage_NoChannelsRegistered(t *testing.T) {
 	// Both teams have empty channel IDs — should error rather than push to nothing.
-	_, err := BuildDispatchMessage(baseReq(), false)
-	if err == nil {
-		t.Fatal("want error when no channel IDs are registered, got nil")
-	}
+	// The prod map now populates every team (see TestReplicateAll32ProdChannels),
+	// so force BOS/NYR empty to exercise the skip-empty defense.
+	withChannels(t, map[string]string{"BOS": "", "NYR": ""}, false, func() {
+		_, err := BuildDispatchMessage(baseReq(), false)
+		if err == nil {
+			t.Fatal("want error when no channel IDs are registered, got nil")
+		}
+	})
 }
 
 func TestBuildDispatchMessage_OneChannelRegistered(t *testing.T) {
-	withChannels(t, map[string]string{"BOS": "chan-BOS"}, false, func() {
+	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": ""}, false, func() {
 		msg, err := BuildDispatchMessage(baseReq(), false)
 		if err != nil {
 			t.Fatalf("unexpected error when one channel registered: %v", err)
@@ -339,10 +343,13 @@ func TestChannelsForTeams_BothRegistered(t *testing.T) {
 }
 
 func TestChannelsForTeams_NoneRegistered(t *testing.T) {
-	ch := channelsForTeams("BOS", "NYR", false)
-	if len(ch) != 0 {
-		t.Errorf("want 0 channels when none registered, got %d", len(ch))
-	}
+	// Force BOS/NYR empty: the real prod map now populates every team.
+	withChannels(t, map[string]string{"BOS": "", "NYR": ""}, false, func() {
+		ch := channelsForTeams("BOS", "NYR", false)
+		if len(ch) != 0 {
+			t.Errorf("want 0 channels when none registered, got %d", len(ch))
+		}
+	})
 }
 
 func TestChannelsForTeams_SameTeam(t *testing.T) {

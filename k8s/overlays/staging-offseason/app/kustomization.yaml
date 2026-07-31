@@ -23,4 +23,4 @@ patches:
         # does not overlap with DAL/CAR/VGK; adding CHI ensures ≥1 game/day is
         # scheduled immediately. DAL/CAR/VGK naturally appear in the richer Jul-1+
         # slate and are kept so they continue to be exercised later in the offseason.
-        TEAM_FILTER: "DAL,CAR,VGK,CHI"
+        TEAM_FILTER: "DAL,CAR,VGK,CHI,BOS,NYI,MTL,NYR,NJD"

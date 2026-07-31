@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"testing"
+	"time"
 
 	. "watchgameupdates/internal/notification"
 )
@@ -162,11 +163,13 @@ func TestBuildDispatchMessage_UnknownPlayType_EmptyEvent(t *testing.T) {
 
 func TestBuildDispatchMessage_GameEnded(t *testing.T) {
 	withChannels(t, map[string]string{"BOS": "chan-BOS", "NYR": "chan-NYR"}, false, func() {
+		before := time.Now().Unix()
 		req := baseReq()
 		req.Data["gameState"] = "Final"
 		req.Data["lastPlayType"] = "game-end"
 
 		msg, err := BuildDispatchMessage(req, false)
+		after := time.Now().Unix()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -177,14 +180,28 @@ func TestBuildDispatchMessage_GameEnded(t *testing.T) {
 		var payload apnsPayload
 		json.Unmarshal(env.Payload, &payload)
 
-		if payload.APS.Event != "end" {
-			t.Errorf("want event=end for game-end, got %s", payload.APS.Event)
+		// The backend never sends event:"end" — a push with event:"end" is
+		// applied by the OS directly with no app code in the loop, which
+		// would foreclose the iOS client's ability to decide when to end the
+		// activity. Ending it is the client's job (LiveActivityManager.endIfFinal).
+		if payload.APS.Event != "update" {
+			t.Errorf("want event=update for game-end (client owns ending), got %s", payload.APS.Event)
 		}
-		if payload.APS.DismissalDate == nil {
-			t.Error("want non-nil dismissal-date for game-end")
+
+		// A game-end push is NOT special at this layer: same stale-date offset
+		// as every other push. Asserting the exact value (not just non-nil)
+		// guards against reintroducing final-specific branching here — the
+		// only thing that makes this push "the end" is its content-state
+		// saying gameState="Final", which the client alone interprets.
+		if payload.APS.StaleDate == nil {
+			t.Fatal("want non-nil stale-date for game-end")
 		}
-		if payload.APS.StaleDate != nil {
-			t.Error("want nil stale-date for game-end")
+		wantMin := before + int64(staleDateOffset.Seconds())
+		wantMax := after + int64(staleDateOffset.Seconds())
+		got := *payload.APS.StaleDate
+		if got < wantMin || got > wantMax {
+			t.Errorf("stale-date = %d, want within [%d, %d] (now + %s) — game-end should use the same offset as any other push",
+				got, wantMin, wantMax, staleDateOffset)
 		}
 	})
 }

@@ -9,9 +9,8 @@ package liveactivity
 //     "payload": {
 //       "aps": {
 //         "timestamp":  1234567890,
-//         "event":      "update" | "end",
-//         "stale-date": 1234568890,       // update only: now + 90s
-//         "dismissal-date": 1234569490,   // end only: now + 10min
+//         "event":      "update",         // always — even on game-end, see below
+//         "stale-date": 1234568890,       // now + 90s, always — no special-casing
 //         "content-state": {
 //           "sport":       "nhl",
 //           "homeTeam":    "BOS",
@@ -41,10 +40,15 @@ import (
 	. "watchgameupdates/internal/notification"
 )
 
-const (
-	staleDateOffset = 90 * time.Second
-	dismissalOffset = 10 * time.Minute
-)
+// staleDateOffset applies to every push, including the final one. A game-end
+// push is not special at this layer: it is an ordinary content-state update
+// whose gameState happens to read "Final", exactly like any other moment's
+// gameState reads "14:32 left, 2nd period". The client alone decides what a
+// Final gameState means for the activity's lifecycle (see
+// LiveActivityManager.endIfFinal) — this backend never sends event:"end",
+// since a push with event:"end" is applied by the OS directly with no app
+// code in the loop, foreclosing the client's ability to decide anything.
+const staleDateOffset = 90 * time.Second
 
 // dispatchEnvelope is what FormatMessage returns and SendNotification parses.
 type dispatchEnvelope struct {
@@ -67,11 +71,10 @@ type contentState struct {
 }
 
 type apsEnvelope struct {
-	Timestamp     int64        `json:"timestamp"`
-	Event         string       `json:"event"`
-	StaleDate     *int64       `json:"stale-date,omitempty"`
-	DismissalDate *int64       `json:"dismissal-date,omitempty"`
-	ContentState  contentState `json:"content-state"`
+	Timestamp    int64        `json:"timestamp"`
+	Event        string       `json:"event"`
+	StaleDate    *int64       `json:"stale-date,omitempty"`
+	ContentState contentState `json:"content-state"`
 }
 
 type apnsPayload struct {
@@ -87,21 +90,13 @@ func BuildDispatchMessage(req NotificationRequest, useDevChannels bool) (string,
 	}
 
 	now := time.Now().Unix()
-	isEnded := strings.EqualFold(req.Data["gameState"], "final") ||
-		strings.EqualFold(req.Data["lastPlayType"], "game-end")
+	ts := now + int64(staleDateOffset.Seconds())
 
 	aps := apsEnvelope{
 		Timestamp:    now,
+		Event:        "update",
+		StaleDate:    &ts,
 		ContentState: cs,
-	}
-	if isEnded {
-		aps.Event = "end"
-		ts := now + int64(dismissalOffset.Seconds())
-		aps.DismissalDate = &ts
-	} else {
-		aps.Event = "update"
-		ts := now + int64(staleDateOffset.Seconds())
-		aps.StaleDate = &ts
 	}
 
 	payloadBytes, err := json.Marshal(apnsPayload{APS: aps})

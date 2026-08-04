@@ -14,10 +14,12 @@ package liveactivity
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -119,6 +121,12 @@ func (e *retryableError) Error() string {
 }
 
 func isRetryable(err error) bool {
-	_, ok := err.(*retryableError)
-	return ok
+	var re *retryableError
+	if errors.As(err, &re) {
+		return true
+	}
+	if err != nil && strings.Contains(err.Error(), "GOAWAY") {
+		return true
+	}
+	return false
 }

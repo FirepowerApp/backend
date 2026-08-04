@@ -2,6 +2,7 @@ package liveactivity
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -149,5 +150,29 @@ func TestPushWithRetry_GoneIs200(t *testing.T) {
 	err := testNotifier(t, srv).pushWithRetry(context.Background(), "chan-1", []byte(`{}`))
 	if err != nil {
 		t.Errorf("expected 410 Gone to be treated as non-error, got: %v", err)
+	}
+}
+
+func TestIsRetryable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"GOAWAY", fmt.Errorf("http2: server sent GOAWAY and closed the connection"), true},
+		{"wrapped GOAWAY", fmt.Errorf("APNs push: %w", fmt.Errorf("GOAWAY frame received")), true},
+		{"retryable status", &retryableError{status: 429, body: "rate limited"}, true},
+		{"bad request", fmt.Errorf("APNs push unexpected status 400: bad request"), false},
+		{"context canceled", context.Canceled, false},
+		{"nil", nil, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isRetryable(tt.err)
+			if got != tt.want {
+				t.Errorf("isRetryable(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }

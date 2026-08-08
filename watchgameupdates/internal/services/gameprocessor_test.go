@@ -120,12 +120,17 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			expectError:       true,
 		},
 		{
+			// A missing shootout column (e.g. a notifier that doesn't request it)
+			// is treated as 0 goals rather than an error, so the away team's
+			// shootout goal still breaks the tie.
 			name:              "MissingHomeShootoutGoals",
 			homeGoals:         "2",
 			awayGoals:         "2",
 			homeShootOutGoals: "",
 			awayShootOutGoals: "2",
-			expectError:       true,
+			expectedHomeGoals: "2",
+			expectedAwayGoals: "3",
+			expectError:       false,
 		},
 		{
 			name:              "MissingAwayShootoutGoals",
@@ -133,7 +138,19 @@ func TestAdjustScoreForShootout(t *testing.T) {
 			awayGoals:         "2",
 			homeShootOutGoals: "1",
 			awayShootOutGoals: "",
-			expectError:       true,
+			expectedHomeGoals: "3",
+			expectedAwayGoals: "2",
+			expectError:       false,
+		},
+		{
+			name:              "MissingBothShootoutGoals",
+			homeGoals:         "2",
+			awayGoals:         "2",
+			homeShootOutGoals: "",
+			awayShootOutGoals: "",
+			expectedHomeGoals: "2",
+			expectedAwayGoals: "2",
+			expectError:       false,
 		},
 	}
 

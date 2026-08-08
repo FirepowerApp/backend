@@ -176,12 +176,12 @@ func AdjustScoreForShootout(gameData map[string]string) error {
 		return fmt.Errorf("invalid away goals: %w", err)
 	}
 
-	homeSOGoals, err := strconv.Atoi(gameData["homeTeamShootOutGoals"])
+	homeSOGoals, err := parseShootoutGoals(gameData["homeTeamShootOutGoals"])
 	if err != nil {
 		return fmt.Errorf("invalid home shootout goals: %w", err)
 	}
 
-	awaySOGoals, err := strconv.Atoi(gameData["awayTeamShootOutGoals"])
+	awaySOGoals, err := parseShootoutGoals(gameData["awayTeamShootOutGoals"])
 	if err != nil {
 		return fmt.Errorf("invalid away shootout goals: %w", err)
 	}
@@ -196,4 +196,14 @@ func AdjustScoreForShootout(gameData map[string]string) error {
 	gameData["awayTeamGoals"] = strconv.Itoa(awayScore)
 
 	return nil
+}
+
+// parseShootoutGoals treats a missing/empty shootout column as 0 goals rather
+// than an error, since a required-key mismatch upstream (or a non-shootout
+// game) can leave the field blank even when the CSV request otherwise succeeds.
+func parseShootoutGoals(value string) (int, error) {
+	if value == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(value)
 }

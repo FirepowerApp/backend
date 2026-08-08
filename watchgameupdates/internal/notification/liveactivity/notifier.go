@@ -31,6 +31,8 @@ var requiredDataKeys = []string{
 	"awayTeamGoals",
 	"homeTeamExpectedGoals",
 	"awayTeamExpectedGoals",
+	"homeTeamShootOutGoals",
+	"awayTeamShootOutGoals",
 	"gameState",
 	"homeTeamAbbrev",
 	"awayTeamAbbrev",

@@ -31,17 +31,14 @@ func main() {
 	dataSource := season.ResolveDataSource(cfg.Env, offseason)
 	log.Printf("Offseason detection: offseason=%v, APP_ENV=%s -> DataSource=%s", offseason, cfg.Env, dataSource)
 
-	// Resolve schedule fetch source and team roster for this run. In
-	// emulator mode, the scheduler reads from the emulator's schedule
-	// endpoint and widens the roster (OFFSEASON_TEAM_FILTER) so the
-	// emulator's narrower offseason slate still schedules games — otherwise
-	// the normal TEAM_FILTER can filter out every emulator game.
+	// Resolve schedule fetch source for this run. In emulator mode, the
+	// scheduler reads from the emulator's schedule endpoint instead of the
+	// live NHL API. TEAM_FILTER (cfg.TeamFilters) applies unchanged in both
+	// modes — it's the same intentional roster regardless of data source.
 	scheduleBaseURL := cfg.ScheduleAPIBaseURL
-	teamFilters := cfg.TeamFilters
 	if dataSource == season.DataSourceEmulator {
 		scheduleBaseURL = cfg.EmulatorScheduleBaseURL
-		teamFilters = cfg.OffseasonTeamFilters
-		log.Printf("Offseason emulator mode: schedule source=%s, team filter=%v", scheduleBaseURL, teamFilters)
+		log.Printf("Offseason emulator mode: schedule source=%s", scheduleBaseURL)
 	}
 
 	// Create schedule fetcher (file-based or HTTP)
@@ -71,7 +68,7 @@ func main() {
 	defer notifService.Close()
 
 	// Create and run scheduler
-	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, teamFilters, notifService, cfg.IncludeLiveGames, string(dataSource))
+	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, cfg.TeamFilters, notifService, cfg.IncludeLiveGames, string(dataSource))
 	if err := s.Run(ctx, date); err != nil {
 		log.Fatalf("Scheduler failed: %v", err)
 	}

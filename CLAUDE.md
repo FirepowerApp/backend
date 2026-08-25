@@ -146,7 +146,7 @@ SEASON_OVERRIDE=                   # "" = detect via live probe | "offseason" | 
 EMULATOR_SCHEDULE_BASE_URL=        # scheduler's schedule source when the resolved DataSource is "emulator"
 EMULATOR_PLAYBYPLAY_BASE_URL=      # handler's play-by-play source when DataSource is "emulator"
 EMULATOR_STATS_BASE_URL=           # handler's stats source when DataSource is "emulator"
-OFFSEASON_TEAM_FILTER=             # TEAM_FILTER override applied only when DataSource resolves to "emulator"
+# TEAM_FILTER above applies unchanged in emulator mode — no separate offseason filter.
 
 # Live Activity APNs (optional — set LIVEACTIVITY_PUSH_ENABLED=true to enable)
 LIVEACTIVITY_PUSH_ENABLED=

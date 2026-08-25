@@ -37,13 +37,11 @@ type Config struct {
 	SchedulerQueue       string // "cloudtasks" (default) or "redis"
 
 	// Offseason detection / emulator routing (see internal/season).
-	NHLSeasonAPIBaseURL       string   // fixed, live NHL API used for offseason detection
-	SeasonOverride            string   // "" (detect) | "offseason" | "inseason"
-	EmulatorScheduleBaseURL   string   // scheduler's schedule source when offseason
-	EmulatorPlayByPlayBaseURL string   // handler's PBP source when offseason
-	EmulatorStatsBaseURL      string   // handler's stats source when offseason
-	OffseasonTeamFilter       string   // raw TEAM_FILTER override applied when offseason
-	OffseasonTeamFilters      []string // parsed, normalized
+	NHLSeasonAPIBaseURL       string // fixed, live NHL API used for offseason detection
+	SeasonOverride            string // "" (detect) | "offseason" | "inseason"
+	EmulatorScheduleBaseURL   string // scheduler's schedule source when offseason
+	EmulatorPlayByPlayBaseURL string // handler's PBP source when offseason
+	EmulatorStatsBaseURL      string // handler's stats source when offseason
 }
 
 func LoadConfig() *Config {
@@ -130,8 +128,6 @@ func LoadConfig() *Config {
 		EmulatorScheduleBaseURL:   os.Getenv("EMULATOR_SCHEDULE_BASE_URL"),
 		EmulatorPlayByPlayBaseURL: os.Getenv("EMULATOR_PLAYBYPLAY_BASE_URL"),
 		EmulatorStatsBaseURL:      os.Getenv("EMULATOR_STATS_BASE_URL"),
-		OffseasonTeamFilter:       os.Getenv("OFFSEASON_TEAM_FILTER"),
-		OffseasonTeamFilters:      ParseTeamFilter(os.Getenv("OFFSEASON_TEAM_FILTER")),
 	}
 }
 

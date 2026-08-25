@@ -64,13 +64,13 @@ func (gp *GameProcessor) ProcessGameUpdate(payload models.Payload) ProcessResult
 		"period-end":   {},
 	}
 
-	lastPlay, maxPeriods := FetchPlayByPlay(payload.Game.ID)
+	lastPlay, maxPeriods := FetchPlayByPlay(payload.Game.ID, payload.DataSource)
 
 	if _, ok := recomputeTypes[lastPlay.TypeDescKey]; ok {
 		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlay.TypeDescKey, payload.Game.ID)
 
 		requiredKeys := gp.NotificationService.GetAllRequiredDataKeys()
-		gameData, err := gp.Fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys)
+		gameData, err := gp.Fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys, payload.DataSource)
 
 		// A CSV parse error means MoneyPuck served a malformed (usually transient)
 		// file. Notifying now would push a zeroed content-state (0-0, empty

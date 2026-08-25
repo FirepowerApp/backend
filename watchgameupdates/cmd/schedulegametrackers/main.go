@@ -10,6 +10,7 @@ import (
 	"watchgameupdates/internal/queue"
 	"watchgameupdates/internal/schedule"
 	"watchgameupdates/internal/scheduler"
+	"watchgameupdates/internal/season"
 )
 
 func main() {
@@ -20,8 +21,31 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
+	// Resolve offseason data source. Detection always probes the live NHL
+	// API (season.NewDetector's fixed BaseURL), independent of
+	// cfg.ScheduleAPIBaseURL — never circular. Emulator routing is gated on
+	// APP_ENV=="staging" inside ResolveDataSource, so production always
+	// resolves to live regardless of the offseason signal.
+	detector := season.NewDetector(cfg.NHLSeasonAPIBaseURL, cfg.SeasonOverride)
+	offseason := detector.IsOffseason(ctx)
+	dataSource := season.ResolveDataSource(cfg.Env, offseason)
+	log.Printf("Offseason detection: offseason=%v, APP_ENV=%s -> DataSource=%s", offseason, cfg.Env, dataSource)
+
+	// Resolve schedule fetch source and team roster for this run. In
+	// emulator mode, the scheduler reads from the emulator's schedule
+	// endpoint and widens the roster (OFFSEASON_TEAM_FILTER) so the
+	// emulator's narrower offseason slate still schedules games — otherwise
+	// the normal TEAM_FILTER can filter out every emulator game.
+	scheduleBaseURL := cfg.ScheduleAPIBaseURL
+	teamFilters := cfg.TeamFilters
+	if dataSource == season.DataSourceEmulator {
+		scheduleBaseURL = cfg.EmulatorScheduleBaseURL
+		teamFilters = cfg.OffseasonTeamFilters
+		log.Printf("Offseason emulator mode: schedule source=%s, team filter=%v", scheduleBaseURL, teamFilters)
+	}
+
 	// Create schedule fetcher (file-based or HTTP)
-	fetcher := schedule.NewScheduleFetcher(cfg.ScheduleFile, cfg.ScheduleAPIBaseURL)
+	fetcher := schedule.NewScheduleFetcher(cfg.ScheduleFile, scheduleBaseURL)
 
 	// Create queue (cloudtasks or redis, selected by SCHEDULER_QUEUE env var)
 	var taskQueue scheduler.TaskEnqueuer
@@ -47,7 +71,7 @@ func main() {
 	defer notifService.Close()
 
 	// Create and run scheduler
-	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, cfg.TeamFilters, notifService, cfg.IncludeLiveGames)
+	s := scheduler.New(fetcher, taskQueue, cfg.GameMaxDurationHours, cfg.SchedulerNotify, teamFilters, notifService, cfg.IncludeLiveGames, string(dataSource))
 	if err := s.Run(ctx, date); err != nil {
 		log.Fatalf("Scheduler failed: %v", err)
 	}

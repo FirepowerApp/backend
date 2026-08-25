@@ -40,10 +40,18 @@ type Scheduler struct {
 	teamFilters      []string // empty = monitor all games
 	notifier         MessageSender
 	includeLiveGames bool
+	// dataSource is stamped onto every enqueued payload (see
+	// internal/season.DataSource) so the handler knows, per task, whether to
+	// fetch from live APIs or the staging emulator. Resolved once per
+	// scheduler run by the caller (cmd/schedulegametrackers), not per game.
+	dataSource string
 }
 
-// New creates a new Scheduler.
-func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilters []string, notifier MessageSender, includeLiveGames bool) *Scheduler {
+// New creates a new Scheduler. dataSource is the resolved
+// internal/season.DataSource value ("live" or "emulator") stamped onto every
+// enqueued payload; pass season.DataSourceLive (or "") when offseason
+// detection doesn't apply.
+func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours int, shouldNotify bool, teamFilters []string, notifier MessageSender, includeLiveGames bool, dataSource string) *Scheduler {
 	return &Scheduler{
 		fetcher:          fetcher,
 		queue:            q,
@@ -52,6 +60,7 @@ func New(fetcher schedule.ScheduleFetcher, q TaskEnqueuer, gameMaxDurationHours 
 		teamFilters:      teamFilters,
 		notifier:         notifier,
 		includeLiveGames: includeLiveGames,
+		dataSource:       dataSource,
 	}
 }
 
@@ -125,6 +134,7 @@ func (s *Scheduler) Run(ctx context.Context, date string) error {
 			},
 			ExecutionEnd: &executionEnd,
 			ShouldNotify: &shouldNotify,
+			DataSource:   s.dataSource,
 		}
 
 		if err := s.queue.Enqueue(ctx, payload, deliverAt); err != nil {

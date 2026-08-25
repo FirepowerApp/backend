@@ -18,3 +18,15 @@ patches:
       data:
         APP_ENV: "staging"
         SCHEDULER_SHOULD_NOTIFY: "true"
+        # Emulator routing (internal/season): only ever used when the
+        # scheduler's runtime NHL-API probe detects the offseason, gated on
+        # APP_ENV=="staging". In-season, these values are present but unused.
+        EMULATOR_SCHEDULE_BASE_URL: "http://gamedataemulator:8125"
+        EMULATOR_PLAYBYPLAY_BASE_URL: "http://gamedataemulator:8125"
+        EMULATOR_STATS_BASE_URL: "http://gamedataemulator:8124"
+        # Busiest team in the emulator's first offseason week (six-way tie ->
+        # alphabetical CHI; see prior offseason-emulator-routing design doc).
+        # Applied instead of TEAM_FILTER only when the scheduler resolves
+        # DataSource=emulator, so the narrow emulator slate still schedules
+        # games while in-season staging keeps its normal roster.
+        OFFSEASON_TEAM_FILTER: "DAL,CAR,VGK,CHI"

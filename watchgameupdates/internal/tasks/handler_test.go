@@ -3,6 +3,8 @@ package tasks
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -158,6 +160,54 @@ func TestScheduleNextCheck_EnqueuesCalled(t *testing.T) {
 	}
 	if parsed.Game.ID != "2024030411" {
 		t.Errorf("Expected game ID %q in enqueued task, got %q", "2024030411", parsed.Game.ID)
+	}
+}
+
+// TestProcessTask_RescheduledTaskPreservesDataSource is the CRITICAL
+// regression test from the plan-eng-review test plan: scheduleNextCheck
+// re-marshals the same payload object it was handed, so DataSource must ride
+// every self-reschedule unchanged. If a future refactor ever rebuilds the
+// payload field-by-field before re-enqueueing, this test catches the dropped
+// field before it can silently flip a mid-game task from emulator to live
+// (or vice versa).
+func TestProcessTask_RescheduledTaskPreservesDataSource(t *testing.T) {
+	// "faceoff" is not in ProcessGameUpdate's recompute-types set, so the
+	// MoneyPuck stats fetch is skipped entirely and this test only needs to
+	// stub play-by-play.
+	pbp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"plays":[{"typeDescKey":"faceoff","periodDescriptor":{"number":1,"periodType":"REG"},"timeRemaining":"10:00"}]}`))
+	}))
+	defer pbp.Close()
+	t.Setenv("PLAYBYPLAY_API_BASE_URL", pbp.URL)
+
+	cfg := &config.Config{MessageIntervalSeconds: 30}
+	enqueuer := &mockEnqueuer{}
+	h := NewWatchGameUpdatesHandler(cfg, enqueuer)
+
+	payload := models.Payload{
+		Game:       models.Game{ID: "2024030411"},
+		DataSource: "emulator",
+	}
+	data, _ := json.Marshal(payload)
+	task := asynq.NewTask(TypeWatchGameUpdates, data)
+
+	if err := h.ProcessTask(context.Background(), task); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if enqueuer.taskCount() != 1 {
+		t.Fatalf("expected the non-terminal play to trigger a reschedule, got %d enqueued tasks", enqueuer.taskCount())
+	}
+
+	enqueuer.mu.Lock()
+	rescheduled := enqueuer.enqueued[0].task
+	enqueuer.mu.Unlock()
+
+	parsed, err := ParseWatchGameUpdatesPayload(rescheduled)
+	if err != nil {
+		t.Fatalf("failed to parse rescheduled task payload: %v", err)
+	}
+	if parsed.DataSource != "emulator" {
+		t.Errorf("DataSource did not survive reschedule: got %q, want %q", parsed.DataSource, "emulator")
 	}
 }
 

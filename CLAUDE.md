@@ -89,6 +89,7 @@ make watch TEAM=COL    # E2E live test: schedule today's game and follow logs
 | `handlers/` | HTTP request handling |
 | `services/` | Business logic (fetcher, play-by-play, rescheduler) |
 | `tasks/` | Google Cloud Tasks integration |
+| `season/` | Offseason detection (live NHL API probe) and live/emulator DataSource routing, staging only |
 | `models/` | Data structures (Payload, Play, PlayByPlayResponse) |
 | `notification/` | Discord and LiveActivity (APNs broadcast push) notifiers |
 | `notification/liveactivity/` | iOS Live Activity APNs push (JWT signing, formatter, channel map) |

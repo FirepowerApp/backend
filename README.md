@@ -69,6 +69,7 @@ backend/
 │   │   ├── handlers/            # HTTP handlers (Cloud Tasks mode)
 │   │   ├── services/            # Shared business logic & game processor
 │   │   ├── tasks/               # Cloud Tasks client + Asynq task types/handler
+│   │   ├── season/              # Offseason detection + live/emulator DataSource routing
 │   │   ├── notification/        # Notifier interface, Discord, and service dispatcher
 │   │   │   ├── liveactivity/    # iOS Live Activity APNs broadcast push
 │   │   │   └── notifiers/       # Factory: reads NOTIFIERS env and wires notifiers
@@ -84,7 +85,7 @@ backend/
 │   └── overlays/
 │       ├── production/          # firepower namespace, prod config
 │       ├── staging/             # firepower-staging namespace
-│       └── staging-offseason/   # staging + emulator data routing (Jun 22–Sep 30)
+│       └── staging-offseason/   # manual break-glass overlay (see Offseason routing below)
 ├── docs/                        # Documentation
 │   └── queue-visualization.md   # Asynqmon dashboard guide
 ├── docker-compose.yml           # Cloud Tasks orchestration
@@ -598,7 +599,7 @@ The cluster uses two namespaces: `firepower` (production) and `firepower-staging
 
 Staging sends real notifications (LiveActivity APNs push and Discord) using the same notifier config as production.
 
-**Offseason routing (Jun 22–Sep 30):** When a staging deploy lands inside this window, the pipeline automatically renders the `staging-offseason` overlay instead of `staging`. This points all three data-source env vars (`PLAYBYPLAY_API_BASE_URL`, `STATS_API_BASE_URL`, `SCHEDULE_API_BASE_URL`) at the in-cluster `gamedataemulator` Service and sets `TEAM_FILTER=DAL,CAR,VGK,CHI` so the emulator's schedule is exercised immediately. The handler and scheduler run unchanged — they just read URLs and stay oblivious to the swap. The routing reverts automatically on the first deploy after Sep 30.
+**Offseason routing (runtime, automatic):** The scheduler probes the live NHL schedule API on every run and decides whether today is NHL offseason (`watchgameupdates/internal/season`). In staging (`APP_ENV=staging`), if it's offseason, every task is stamped `DataSource=emulator` and the pipeline reads from the in-cluster `gamedataemulator` Service instead of live NHL/MoneyPuck, using the existing `TEAM_FILTER` roster unchanged; in production, `DataSource` is always `live` regardless of the signal. No deploy-time date logic is involved. The `staging-offseason` overlay is kept only as a manual break-glass — trigger it via the `force_offseason_overlay` input on the Deploy workflow, which also sets `SEASON_OVERRIDE=offseason` so the overlay and the runtime detector can't disagree.
 
 ### Cloud Tasks (HTTP Mode — local/manual)
 

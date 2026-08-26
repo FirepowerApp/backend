@@ -14,8 +14,15 @@ patches:
       metadata:
         name: app-config
       data:
-        # Offseason (Jun 22 – Sep 30): pull simulated data from the in-cluster
-        # game data emulator so the full pipeline keeps running with no live games.
+        # Manual break-glass: force the runtime detector (internal/season) to
+        # agree that it's offseason, so DataSource stamped on every payload
+        # stays truthful ("emulator") for as long as this overlay is applied —
+        # otherwise DataSource can read "live" while these URL overrides
+        # silently route real traffic to the emulator (found in review).
+        SEASON_OVERRIDE: "offseason"
+        # Redundant with SEASON_OVERRIDE above once DataSource resolves to
+        # "emulator" (EMULATOR_*_BASE_URL takes over), kept for defense in
+        # depth / backward compat with pre-runtime-detection behavior.
         PLAYBYPLAY_API_BASE_URL: "http://gamedataemulator:8125"
         STATS_API_BASE_URL: "http://gamedataemulator:8124"
         SCHEDULE_API_BASE_URL: "http://gamedataemulator:8125"

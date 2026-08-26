@@ -104,3 +104,43 @@ func TestProcessGameUpdate_ValidCSVNotifies(t *testing.T) {
 		t.Error("expected RetryAfterDataError=false for a valid CSV")
 	}
 }
+
+// TestProcessGameUpdate_ForwardsDataSourceToPlayByPlayFetch drives
+// ProcessGameUpdate end-to-end with distinct live and emulator play-by-play
+// servers to prove payload.DataSource is actually threaded through to the
+// fetch call — not just preserved across JSON round-trips (that's covered
+// separately by TestProcessTask_RescheduledTaskPreservesDataSource). If
+// gameprocessor.go ever stopped passing payload.DataSource to
+// FetchPlayByPlay, this test would catch it; the reschedule test would not.
+func TestProcessGameUpdate_ForwardsDataSourceToPlayByPlayFetch(t *testing.T) {
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("live PBP server should not be hit when DataSource=emulator and APP_ENV=staging")
+	}))
+	defer live.Close()
+
+	// "faceoff" is not in ProcessGameUpdate's recompute-types set, so the
+	// MoneyPuck stats fetch is skipped and this test only needs to stub PBP.
+	emulator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"plays":[{"typeDescKey":"faceoff","periodDescriptor":{"number":1,"periodType":"REG"},"timeRemaining":"10:00"}]}`))
+	}))
+	defer emulator.Close()
+
+	t.Setenv("APP_ENV", "staging")
+	t.Setenv("PLAYBYPLAY_API_BASE_URL", live.URL)
+	t.Setenv("EMULATOR_PLAYBYPLAY_BASE_URL", emulator.URL)
+
+	notifier := &recordingNotifier{}
+	svc := notification.NewServiceWithNotificationFlag(true)
+	svc.RegisterNotifier(notifier)
+
+	gp := &GameProcessor{Fetcher: &HTTPGameDataFetcher{}, NotificationService: svc}
+
+	result := gp.ProcessGameUpdate(models.Payload{
+		Game:       models.Game{ID: "2025030415"},
+		DataSource: "emulator",
+	})
+
+	if result.LastPlay.TypeDescKey != "faceoff" {
+		t.Errorf("expected ProcessGameUpdate to route to the emulator PBP server, got play type %q", result.LastPlay.TypeDescKey)
+	}
+}

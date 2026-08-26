@@ -16,15 +16,6 @@ const (
 	DataSourceEmulator DataSource = "emulator"
 )
 
-// Service identifies which base URL is being resolved.
-type Service string
-
-const (
-	ServicePlayByPlay Service = "pbp"
-	ServiceStats      Service = "stats"
-	ServiceSchedule   Service = "schedule"
-)
-
 // ResolveDataSource decides the effective DataSource for a scheduler run.
 // Emulator routing is gated hard on APP_ENV=="staging" — production always
 // resolves to live regardless of the offseason signal, so a detection false

@@ -37,6 +37,17 @@ on:
           image.
         required: false
         default: latest
+      force_offseason_overlay:
+        description: >-
+          Manual break-glass: force the staging-offseason overlay (routes
+          staging to the game data emulator via ConfigMap) regardless of
+          runtime offseason detection. Ignored for production. The pipeline's
+          normal offseason routing is runtime detection (internal/season,
+          gated on APP_ENV=staging) — this flag exists only to test the
+          break-glass overlay path independently, or as a fallback if runtime
+          detection is ever disabled.
+        type: boolean
+        default: false
 
 jobs:
   deploy:
@@ -90,15 +101,16 @@ jobs:
             *) echo "ERROR: unknown environment '$ENVIRONMENT'"; exit 1 ;;
           esac
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          # Offseason routing: Jun 22 – Sep 30 (any year) in UTC.
-          # Force base-10 parsing to avoid octal interpretation of 06xx dates.
+          # Offseason routing is normally decided at RUNTIME by the scheduler
+          # (internal/season: probes the live NHL API, gated on
+          # APP_ENV=staging) — the deploy pipeline no longer picks the
+          # overlay by calendar date. staging-offseason is kept only as a
+          # manual break-glass, forced via the force_offseason_overlay input.
           OVERLAY="$ENVIRONMENT"
-          if [ "$ENVIRONMENT" = "staging" ]; then
-            MMDD=$(date -u +%m%d)
-            if [ $((10#$MMDD)) -ge 622 ] && [ $((10#$MMDD)) -le 930 ]; then
-              OVERLAY="staging-offseason"
-              echo "Offseason window active (${MMDD} UTC) -> routing staging to game data emulator"
-            fi
+          FORCE_OFFSEASON="${{ inputs.force_offseason_overlay || 'false' }}"
+          if [ "$ENVIRONMENT" = "staging" ] && [ "$FORCE_OFFSEASON" = "true" ]; then
+            OVERLAY="staging-offseason"
+            echo "Manual break-glass: forcing staging-offseason overlay (force_offseason_overlay=true)"
           fi
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "namespace=$NAMESPACE"     >> "$GITHUB_OUTPUT"

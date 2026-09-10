@@ -66,7 +66,7 @@ func WatchGameUpdatesHandler(
 	}
 }
 
-// scheduleNextCheck creates a Cloud Task to reschedule the next game check
+// scheduleNextCheck creates a Cloud Task to reschedule the next game check.
 func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 	cfg := config.LoadConfig()
 
@@ -79,6 +79,15 @@ func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 	}
 	defer tasksClient.Close()
 
+	return scheduleNextCheckWithClient(tasksCtx, tasksClient, cfg, payload, interval)
+}
+
+// scheduleNextCheckWithClient contains the reschedule logic with the Cloud
+// Tasks client and config injected, so it's testable with a fake
+// tasks.CloudTasksClient instead of requiring a real (or emulated) GCP
+// backend. scheduleNextCheck is the production entrypoint; tests call this
+// directly.
+func scheduleNextCheckWithClient(ctx context.Context, tasksClient tasks.CloudTasksClient, cfg *config.Config, payload models.Payload, interval time.Duration) error {
 	scheduleTime := timestamppb.New(time.Now().Add(interval))
 
 	payloadJSON, err := json.Marshal(payload)
@@ -119,7 +128,7 @@ func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 
 	log.Printf("Sending task creation request in %ds for game %s to Cloud Tasks queue %s", int(interval.Seconds()), payload.Game.ID, queuePath)
 
-	_, err = tasksClient.CreateTask(tasksCtx, req)
+	_, err = tasksClient.CreateTask(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to create reschedule task: %w", err)
 	}

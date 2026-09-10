@@ -18,3 +18,9 @@ patches:
       data:
         APP_ENV: "staging"
         SCHEDULER_SHOULD_NOTIFY: "true"
+        # Emulator routing (internal/season): only ever used when the
+        # scheduler's runtime NHL-API probe detects the offseason, gated on
+        # APP_ENV=="staging". In-season, these values are present but unused.
+        EMULATOR_SCHEDULE_BASE_URL: "http://gamedataemulator:8125"
+        EMULATOR_PLAYBYPLAY_BASE_URL: "http://gamedataemulator:8125"
+        EMULATOR_STATS_BASE_URL: "http://gamedataemulator:8124"

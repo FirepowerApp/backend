@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 )
 
 // ErrCSVParse classifies a failure to parse the MoneyPuck CSV (e.g. a transient
@@ -16,8 +15,10 @@ import (
 var ErrCSVParse = errors.New("moneypuck CSV parse error")
 
 type GameDataFetcher interface {
-	FetchGameData(gameID string) ([][]string, error)
-	FetchAndParseGameData(gameID string, requiredKeys []string) (map[string]string, error)
+	// dataSource selects live vs. the staging emulator (see
+	// internal/season.DataSource); empty string is treated as live.
+	FetchGameData(gameID string, dataSource string) ([][]string, error)
+	FetchAndParseGameData(gameID string, requiredKeys []string, dataSource string) (map[string]string, error)
 	GetColumnValue(statColumn string, records [][]string) (string, error)
 	GetTeamNames(records [][]string) (homeTeam, awayTeam string, err error)
 }
@@ -102,14 +103,10 @@ func (f *HTTPGameDataFetcher) GetTeamNames(records [][]string) (homeTeam, awayTe
 	return homeTeam, awayTeam, nil
 }
 
-func (f *HTTPGameDataFetcher) FetchGameData(gameID string) ([][]string, error) {
+func (f *HTTPGameDataFetcher) FetchGameData(gameID string, dataSource string) ([][]string, error) {
 	log.Printf("INFO: Fetching MoneyPuck data for game %s", gameID)
 
-	// Get stats API base URL from environment variable
-	statsAPIBaseURL := os.Getenv("STATS_API_BASE_URL")
-	if statsAPIBaseURL == "" {
-		statsAPIBaseURL = "https://moneypuck.com" // Default production URL
-	}
+	statsAPIBaseURL := resolveStatsBaseURL(dataSource)
 
 	url := fmt.Sprintf("%s/moneypuck/gameData/20252026/%s.csv", statsAPIBaseURL, gameID)
 	log.Printf("DEBUG: Requesting URL: %s", url)
@@ -145,8 +142,8 @@ func (f *HTTPGameDataFetcher) FetchGameData(gameID string) ([][]string, error) {
 	return records, nil
 }
 
-func (f *HTTPGameDataFetcher) FetchAndParseGameData(gameID string, requiredKeys []string) (map[string]string, error) {
-	records, err := f.FetchGameData(gameID)
+func (f *HTTPGameDataFetcher) FetchAndParseGameData(gameID string, requiredKeys []string, dataSource string) (map[string]string, error) {
+	records, err := f.FetchGameData(gameID, dataSource)
 	if err != nil {
 		return nil, err
 	}

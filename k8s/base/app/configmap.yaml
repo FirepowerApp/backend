@@ -11,6 +11,10 @@ data:
   HANDLER_HOST: "http://backend:8080"
   PLAYBYPLAY_API_BASE_URL: "https://api-web.nhle.com"
   STATS_API_BASE_URL: "https://moneypuck.com"
+  # Fixed, live NHL API used for offseason detection (internal/season), kept
+  # separate from the swappable base URLs above so detection is never
+  # circular. Same value in every environment.
+  NHL_SEASON_API_BASE_URL: "https://api-web.nhle.com"
   MESSAGE_INTERVAL_SECONDS: "60"
   GAME_MAX_DURATION_HOURS: "5"
   SCHEDULER_SHOULD_NOTIFY: "true"

@@ -35,6 +35,15 @@ type Config struct {
 	TeamFilters          []string // parsed, normalized roster (empty = monitor all)
 	IncludeLiveGames     bool
 	SchedulerQueue       string // "cloudtasks" (default) or "redis"
+
+	// Offseason detection / emulator routing (see internal/season).
+	// The handler's emulator PBP/stats URLs (EMULATOR_PLAYBYPLAY_BASE_URL,
+	// EMULATOR_STATS_BASE_URL) are read directly from env by
+	// internal/services/baseurl.go, not through Config — only the
+	// scheduler's schedule source is needed here.
+	NHLSeasonAPIBaseURL     string // fixed, live NHL API used for offseason detection
+	SeasonOverride          string // "" (detect) | "offseason" | "inseason"
+	EmulatorScheduleBaseURL string // scheduler's schedule source when offseason
 }
 
 func LoadConfig() *Config {
@@ -91,8 +100,8 @@ func LoadConfig() *Config {
 			}
 			return os.Getenv("PLAYBYPLAY_API_BASE_URL")
 		}(),
-		ScheduleFile: os.Getenv("SCHEDULE_FILE"),
-		ScheduleDate: os.Getenv("SCHEDULE_DATE"),
+		ScheduleFile:     os.Getenv("SCHEDULE_FILE"),
+		ScheduleDate:     os.Getenv("SCHEDULE_DATE"),
 		TeamFilter:       os.Getenv("TEAM_FILTER"),
 		TeamFilters:      ParseTeamFilter(os.Getenv("TEAM_FILTER")),
 		IncludeLiveGames: os.Getenv("INCLUDE_LIVE_GAMES") == "true",
@@ -115,6 +124,10 @@ func LoadConfig() *Config {
 			}
 			return val == "true"
 		}(),
+
+		NHLSeasonAPIBaseURL:     os.Getenv("NHL_SEASON_API_BASE_URL"),
+		SeasonOverride:          os.Getenv("SEASON_OVERRIDE"),
+		EmulatorScheduleBaseURL: os.Getenv("EMULATOR_SCHEDULE_BASE_URL"),
 	}
 }
 

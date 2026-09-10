@@ -20,4 +20,8 @@ type Payload struct {
 	Game         Game    `json:"game"`
 	ExecutionEnd *string `json:"execution_end,omitempty"`
 	ShouldNotify *bool   `json:"should_notify,omitempty"`
+	// DataSource is "live" or "emulator" (see internal/season.DataSource).
+	// Empty is treated as "live" so tasks enqueued before this field existed
+	// keep working unchanged.
+	DataSource string `json:"data_source,omitempty"`
 }

@@ -6,16 +6,14 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"watchgameupdates/internal/models"
 )
 
-func FetchPlayByPlay(gameID string) (lastPlay models.Play, maxPeriods *int) {
-	// Get play-by-play API base URL from environment variable
-	playByPlayAPIBaseURL := os.Getenv("PLAYBYPLAY_API_BASE_URL")
-	if playByPlayAPIBaseURL == "" {
-		playByPlayAPIBaseURL = "https://api-web.nhle.com" // Default production URL
-	}
+// FetchPlayByPlay fetches play-by-play data for gameID. dataSource (see
+// internal/season.DataSource) selects live vs. the staging emulator; empty
+// string is treated as live.
+func FetchPlayByPlay(gameID string, dataSource string) (lastPlay models.Play, maxPeriods *int) {
+	playByPlayAPIBaseURL := resolvePlayByPlayBaseURL(dataSource)
 
 	playByPlayUrl := fmt.Sprintf("%s/v1/gamecenter/%s/play-by-play", playByPlayAPIBaseURL, gameID)
 	resp, err := http.Get(playByPlayUrl)

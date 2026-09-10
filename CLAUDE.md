@@ -89,6 +89,7 @@ make watch TEAM=COL    # E2E live test: schedule today's game and follow logs
 | `handlers/` | HTTP request handling |
 | `services/` | Business logic (fetcher, play-by-play, rescheduler) |
 | `tasks/` | Google Cloud Tasks integration |
+| `season/` | Offseason detection (live NHL API probe) and live/emulator DataSource routing, staging only |
 | `models/` | Data structures (Payload, Play, PlayByPlayResponse) |
 | `notification/` | Discord and LiveActivity (APNs broadcast push) notifiers |
 | `notification/liveactivity/` | iOS Live Activity APNs push (JWT signing, formatter, channel map) |
@@ -137,6 +138,16 @@ DISCORD_CHANNEL_ID=          # Discord channel to post game updates
 MESSAGE_INTERVAL_SECONDS=60       # active-play polling interval (default 60)
 PERIOD_END_INTERVAL_SECONDS=1200  # post-period-end wait before next poll (default 1200)
 TEAM_FILTER=DAL,CAR,VGK           # comma-separated NHL team abbrevs to monitor; empty = all teams
+
+# Offseason detection / emulator routing (internal/season). Staging only —
+# gated on APP_ENV=="staging"; production always resolves to live regardless
+# of the offseason signal.
+NHL_SEASON_API_BASE_URL=           # fixed, live NHL API used for offseason detection (default https://api-web.nhle.com)
+SEASON_OVERRIDE=                   # "" = detect via live probe | "offseason" | "inseason" — force the branch locally, e.g. SEASON_OVERRIDE=offseason go run ./cmd/schedulegametrackers
+EMULATOR_SCHEDULE_BASE_URL=        # scheduler's schedule source when the resolved DataSource is "emulator"
+EMULATOR_PLAYBYPLAY_BASE_URL=      # handler's play-by-play source when DataSource is "emulator"
+EMULATOR_STATS_BASE_URL=           # handler's stats source when DataSource is "emulator"
+# TEAM_FILTER above applies unchanged in emulator mode — no separate offseason filter.
 
 # Live Activity APNs (optional — set LIVEACTIVITY_PUSH_ENABLED=true to enable)
 LIVEACTIVITY_PUSH_ENABLED=

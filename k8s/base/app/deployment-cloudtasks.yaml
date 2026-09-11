@@ -14,11 +14,11 @@ spec:
     spec:
       containers:
         - name: cloudtasks
-          image: ghcr.io/aertje/cloud-tasks-emulator:latest
+          image: ghcr.io/aertje/cloud-tasks-emulator@sha256:a625499a689597d1c14efe33224c59e5e5a1e6b9bfbdfc52e978fad307c52ed3
           imagePullPolicy: Always
           ports:
             - containerPort: 8123
           args:
             - --host=0.0.0.0
-            - -queue
+            - -initial-queue
             - projects/localproject/locations/us-south1/queues/gameschedule

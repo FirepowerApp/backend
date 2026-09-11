@@ -20,5 +20,5 @@ spec:
             - containerPort: 8123
           args:
             - --host=0.0.0.0
-            - -queue
+            - -initial-queue
             - projects/localproject/locations/us-south1/queues/gameschedule

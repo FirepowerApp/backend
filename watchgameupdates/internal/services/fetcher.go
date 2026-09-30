@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 // ErrCSVParse classifies a failure to parse the MoneyPuck CSV (e.g. a transient
@@ -103,12 +104,33 @@ func (f *HTTPGameDataFetcher) GetTeamNames(records [][]string) (homeTeam, awayTe
 	return homeTeam, awayTeam, nil
 }
 
+// seasonFromGameID derives the MoneyPuck season path segment (e.g. "20252026")
+// from an NHL game ID, whose first four digits are the season's start year
+// (e.g. "2025020999" → 2025-26 season). This keeps the MoneyPuck URL correct
+// across season rollovers without a hardcoded year or an extra API call.
+func seasonFromGameID(gameID string) (string, error) {
+	if len(gameID) < 4 {
+		return "", fmt.Errorf("game ID %q too short to derive season", gameID)
+	}
+	startYear, err := strconv.Atoi(gameID[:4])
+	if err != nil {
+		return "", fmt.Errorf("game ID %q has non-numeric season prefix: %w", gameID, err)
+	}
+	return fmt.Sprintf("%d%d", startYear, startYear+1), nil
+}
+
 func (f *HTTPGameDataFetcher) FetchGameData(gameID string, dataSource string) ([][]string, error) {
 	log.Printf("INFO: Fetching MoneyPuck data for game %s", gameID)
 
 	statsAPIBaseURL := resolveStatsBaseURL(dataSource)
 
-	url := fmt.Sprintf("%s/moneypuck/gameData/20252026/%s.csv", statsAPIBaseURL, gameID)
+	season, err := seasonFromGameID(gameID)
+	if err != nil {
+		log.Printf("ERROR: cannot build MoneyPuck URL for game %s: %v", gameID, err)
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/moneypuck/gameData/%s/%s.csv", statsAPIBaseURL, season, gameID)
 	log.Printf("DEBUG: Requesting URL: %s", url)
 
 	resp, err := http.Get(url)

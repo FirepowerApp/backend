@@ -5,3 +5,43 @@ namespace: firepower
 
 resources:
   - ../../../base/app
+
+patches:
+  - target:
+      kind: Deployment
+      name: handler
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: handler
+      spec:
+        template:
+          spec:
+            containers:
+              - name: handler
+                env:
+                  # Production is being brought back online in stages: the
+                  # scheduler (NOTIFIERS=discord, base manifest) keeps sending
+                  # its daily schedule summary, but the handler's per-game
+                  # notifications (base default NOTIFIERS=liveactivity, i.e.
+                  # APNs broadcast to real production channels) stay off until
+                  # production is verified end-to-end. Remove this patch to
+                  # re-enable.
+                  - name: NOTIFIERS
+                    value: ""
+  - target:
+      kind: CronJob
+      name: scheduler
+    patch: |-
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: scheduler
+      spec:
+        # Explicit and git-managed: previously this was toggled by a direct
+        # `kubectl` edit against the live cluster (never committed), so the
+        # running state wasn't visible in the repo and a plain `kubectl apply`
+        # of the base manifest wouldn't have changed it either way. Flip this
+        # value (not a live cluster edit) to pause/resume the scheduler.
+        suspend: false

@@ -70,6 +70,54 @@ func TestFetchAndParseGameData_HTTPErrorIsNotClassifiedAsParseError(t *testing.T
 	}
 }
 
+func TestSeasonFromGameID(t *testing.T) {
+	cases := []struct {
+		gameID  string
+		want    string
+		wantErr bool
+	}{
+		{"2025020999", "20252026", false}, // regular season
+		{"2026030415", "20262027", false}, // next season, playoffs
+		{"1999020001", "19992000", false}, // century rollover
+		{"abc020001", "", true},           // non-numeric prefix
+		{"202", "", true},                 // too short
+	}
+	for _, c := range cases {
+		got, err := seasonFromGameID(c.gameID)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("seasonFromGameID(%q): expected error, got %q", c.gameID, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("seasonFromGameID(%q): unexpected error: %v", c.gameID, err)
+		}
+		if got != c.want {
+			t.Errorf("seasonFromGameID(%q) = %q, want %q", c.gameID, got, c.want)
+		}
+	}
+}
+
+func TestFetchGameData_URLUsesSeasonFromGameID(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "text/csv")
+		_, _ = w.Write([]byte("id,homeTeamGoals\n1,2\n"))
+	}))
+	defer srv.Close()
+	t.Setenv("STATS_API_BASE_URL", srv.URL)
+
+	f := &HTTPGameDataFetcher{}
+	if _, err := f.FetchGameData("2026020123", ""); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := "/moneypuck/gameData/20262027/2026020123.csv"; gotPath != want {
+		t.Errorf("requested path = %q, want %q", gotPath, want)
+	}
+}
+
 func TestFetchGameData_EmulatorDataSourceUsesEmulatorBaseURL(t *testing.T) {
 	emulator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")

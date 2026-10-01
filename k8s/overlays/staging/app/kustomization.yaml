@@ -7,6 +7,25 @@ resources:
   - ../../../base/app
 
 patches:
+  # Staging's handler sends no notifications: only the primary (production)
+  # namespace pushes Live Activity updates to the real APNs broadcast
+  # channels. The scheduler keeps NOTIFIERS=discord (base manifest).
+  - target:
+      kind: Deployment
+      name: handler
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: handler
+      spec:
+        template:
+          spec:
+            containers:
+              - name: handler
+                env:
+                  - name: NOTIFIERS
+                    value: ""
   - target:
       kind: ConfigMap
       name: app-config

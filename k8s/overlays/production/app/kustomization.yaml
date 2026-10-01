@@ -21,15 +21,13 @@ patches:
             containers:
               - name: handler
                 env:
-                  # Production is being brought back online in stages: the
-                  # scheduler (NOTIFIERS=discord, base manifest) keeps sending
-                  # its daily schedule summary, but the handler's per-game
-                  # notifications (base default NOTIFIERS=liveactivity, i.e.
-                  # APNs broadcast to real production channels) stay off until
-                  # production is verified end-to-end. Remove this patch to
-                  # re-enable.
+                  # Primary (production) is the only namespace that pushes
+                  # Live Activity notifications to the real APNs broadcast
+                  # channels. Staging's handler runs with NOTIFIERS="" so it
+                  # never touches those channels. The scheduler keeps
+                  # NOTIFIERS=discord (base manifest) in both namespaces.
                   - name: NOTIFIERS
-                    value: ""
+                    value: "liveactivity"
   - target:
       kind: CronJob
       name: scheduler

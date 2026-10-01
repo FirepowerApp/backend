@@ -597,7 +597,7 @@ The cluster uses two namespaces: `firepower` (production) and `firepower-staging
 # where <sha> is the 7-char commit SHA you verified in staging
 ```
 
-Staging sends real notifications (LiveActivity APNs push and Discord) using the same notifier config as production.
+Production (`firepower`) is the only namespace whose handler pushes LiveActivity APNs to the real broadcast channels (`NOTIFIERS=liveactivity`). The staging handler runs with `NOTIFIERS=""`, so it never touches those channels. Both namespaces' schedulers keep `NOTIFIERS=discord` and send their daily schedule summaries to Discord.
 
 **Offseason routing (runtime, automatic):** The scheduler probes the live NHL schedule API on every run and decides whether today is NHL offseason (`watchgameupdates/internal/season`). In staging (`APP_ENV=staging`), if it's offseason, every task is stamped `DataSource=emulator` and the pipeline reads from the in-cluster `gamedataemulator` Service instead of live NHL/MoneyPuck, using the existing `TEAM_FILTER` roster unchanged; in production, `DataSource` is always `live` regardless of the signal. No deploy-time date logic is involved. The `staging-offseason` overlay is kept only as a manual break-glass — trigger it via the `force_offseason_overlay` input on the Deploy workflow, which also sets `SEASON_OVERRIDE=offseason` so the overlay and the runtime detector can't disagree.
 

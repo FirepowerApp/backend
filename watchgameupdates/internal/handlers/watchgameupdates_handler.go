@@ -52,12 +52,7 @@ func WatchGameUpdatesHandler(
 
 	if result.ShouldReschedule {
 		cfg := config.LoadConfig()
-		interval := services.RescheduleInterval(result.LastPlay, result.MaxPeriods, cfg)
-		if result.RetryAfterDataError {
-			// MoneyPuck data was unparseable and nothing was sent; ignore the
-			// play-type interval and retry soon to pick up the corrected file.
-			interval = services.ParseErrorRetryInterval
-		}
+		interval := result.NextCheckInterval(cfg)
 		if err := scheduleNextCheck(payload, interval); err != nil {
 			log.Printf("Failed to schedule next check: %v", err)
 			http.Error(w, "Failed to schedule next check", http.StatusInternalServerError)
@@ -75,7 +70,9 @@ func scheduleNextCheck(payload models.Payload, interval time.Duration) error {
 
 	tasksClient, err := tasks.NewCloudTasksClient(tasksCtx, cfg)
 	if err != nil {
-		log.Fatalf("failed to create tasks client: %v", err)
+		// Return, never exit: the handler is a single replica, and one transient
+		// client error must not take down tracking for every game in flight.
+		return fmt.Errorf("failed to create tasks client: %w", err)
 	}
 	defer tasksClient.Close()
 

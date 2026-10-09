@@ -65,12 +65,7 @@ func (h *WatchGameUpdatesHandler) ProcessTask(ctx context.Context, t *asynq.Task
 	result := processor.ProcessGameUpdate(payload)
 
 	if result.ShouldReschedule {
-		interval := time.Duration(h.cfg.MessageIntervalSeconds) * time.Second
-		if result.RetryAfterDataError {
-			// MoneyPuck data was unparseable and nothing was sent; retry soon to
-			// pick up the corrected file.
-			interval = services.ParseErrorRetryInterval
-		}
+		interval := result.NextCheckInterval(h.cfg)
 		if err := h.scheduleNextCheck(payload, interval); err != nil {
 			return fmt.Errorf("failed to schedule next check for game %s: %w", payload.Game.ID, err)
 		}

@@ -13,9 +13,28 @@ import (
 )
 
 // ParseErrorRetryInterval is how long to wait before retrying a game check after
-// the MoneyPuck CSV failed to parse. The malformed file is usually transient, so
-// we retry the same scenario shortly rather than notifying with missing data.
+// an upstream failure (a malformed MoneyPuck CSV, or the play-by-play fetch
+// failing). The failure is usually transient, so we retry the same scenario
+// shortly rather than notifying with missing data.
 const ParseErrorRetryInterval = 1 * time.Minute
+
+// nonCSVKeys are notifier-required keys the processor fills from the play-by-play
+// document or the scheduler's Game payload. Asking MoneyPuck for them is noise:
+// gameState, lastPlayType and the tricodes are not CSV columns (each miss logs
+// the full column list), and homeTeamGoals/awayTeamGoals exist there but are
+// deliberately superseded because MoneyPuck omits the shootout decider.
+var nonCSVKeys = map[string]struct{}{
+	"gameState": {}, "lastPlayType": {},
+	"homeTeamGoals": {}, "awayTeamGoals": {},
+	"homeTeamAbbrev": {}, "awayTeamAbbrev": {},
+}
+
+const (
+	// gameTypeRegularSeason is the NHL's gameType for the regular season (3 is playoffs).
+	gameTypeRegularSeason = 2
+	// regulationPeriods is the number of periods before overtime.
+	regulationPeriods = 3
+)
 
 // GameProcessor contains the shared game-check logic used by both the HTTP handler
 // and the asynq worker handler. It is stateless and safe for concurrent use.
@@ -27,12 +46,24 @@ type GameProcessor struct {
 // ProcessResult holds the outcome of processing a game update.
 type ProcessResult struct {
 	ShouldReschedule bool
-	LastPlay         models.Play
-	MaxPeriods       *int
-	// RetryAfterDataError is set when the MoneyPuck CSV could not be parsed. No
-	// notification was sent this cycle; the caller should reschedule a short retry
-	// (ParseErrorRetryInterval) rather than the normal play-type interval.
+	// Response is the play-by-play document this result was derived from. Nil when
+	// the fetch failed (RetryAfterDataError is then set).
+	Response *models.PlayByPlayResponse
+	// RetryAfterDataError is set when an upstream failed (the play-by-play fetch,
+	// or the MoneyPuck CSV could not be parsed). No notification was sent this
+	// cycle; the caller should reschedule a short retry (ParseErrorRetryInterval)
+	// rather than the normal interval, and must not consult Response when it is nil.
 	RetryAfterDataError bool
+}
+
+// NextCheckInterval is how long to wait before the next check. After an upstream
+// failure nothing was sent and Response may be nil, so retry soon without deriving
+// anything from it; otherwise the document decides.
+func (r ProcessResult) NextCheckInterval(cfg *config.Config) time.Duration {
+	if r.RetryAfterDataError {
+		return ParseErrorRetryInterval
+	}
+	return RescheduleInterval(r.Response, cfg)
 }
 
 // ShouldSkipExecution returns true if the current time is past the execution end window.
@@ -52,8 +83,10 @@ func ShouldSkipExecution(payload models.Payload) (bool, error) {
 	return false, nil
 }
 
-// ProcessGameUpdate runs the core game-check logic: fetch play-by-play data,
-// optionally fetch stats and send notifications, and determine if rescheduling is needed.
+// ProcessGameUpdate runs the core game-check logic: fetch the play-by-play
+// document, optionally fetch xG and send notifications, and determine if
+// rescheduling is needed. The document is the single source of truth for state,
+// clock and score; MoneyPuck contributes expected goals only.
 func (gp *GameProcessor) ProcessGameUpdate(payload models.Payload) ProcessResult {
 	recomputeTypes := map[string]struct{}{
 		"blocked-shot": {},
@@ -64,146 +97,189 @@ func (gp *GameProcessor) ProcessGameUpdate(payload models.Payload) ProcessResult
 		"period-end":   {},
 	}
 
-	lastPlay, maxPeriods := FetchPlayByPlay(payload.Game.ID, payload.DataSource)
+	resp, err := FetchPlayByPlay(payload.Game.ID, payload.DataSource)
+	if err != nil {
+		// Nothing to report from: a zeroed push would read as 0-0 "Pregame" on iOS.
+		// The self-enqueued retry is the retry; the caller returns 200 so Cloud
+		// Tasks does not also retry.
+		log.Printf("ERROR: %v; skipping notification and retrying in %s", err, ParseErrorRetryInterval)
+		return ProcessResult{
+			ShouldReschedule:    ShouldReschedule(payload, nil),
+			RetryAfterDataError: true,
+		}
+	}
 
-	if _, ok := recomputeTypes[lastPlay.TypeDescKey]; ok {
-		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlay.TypeDescKey, payload.Game.ID)
+	// A finished game always gets a final push, even if gameState flipped to OFF
+	// before the last play was a recompute type: this is the last cycle.
+	_, recompute := recomputeTypes[lastPlayType(resp)]
+	if recompute || IsFinal(resp) {
+		log.Printf("Processing play type '%s' for game %s - fetching MoneyPuck data", lastPlayType(resp), payload.Game.ID)
 
-		requiredKeys := gp.NotificationService.GetAllRequiredDataKeys()
-		gameData, err := gp.Fetcher.FetchAndParseGameData(payload.Game.ID, requiredKeys, payload.DataSource)
+		gameData, err := gp.Fetcher.FetchAndParseGameData(payload.Game.ID, csvKeys(gp.NotificationService.GetAllRequiredDataKeys()), payload.DataSource)
 
 		// A CSV parse error means MoneyPuck served a malformed (usually transient)
 		// file. Notifying now would push a zeroed content-state (0-0, empty
 		// gameState → "Pregame" on iOS). Instead, send nothing and retry shortly so
-		// the next fetch can pick up the corrected file.
+		// the next fetch can pick up the corrected file. Reschedule even for a final
+		// game: the retry is what delivers the final push.
 		if errors.Is(err, ErrCSVParse) {
 			log.Printf("WARNING: MoneyPuck CSV parse error for game %s; skipping notification and retrying in %s: %v",
 				payload.Game.ID, ParseErrorRetryInterval, err)
 			return ProcessResult{
 				ShouldReschedule:    true,
-				LastPlay:            lastPlay,
-				MaxPeriods:          maxPeriods,
+				Response:            resp,
 				RetryAfterDataError: true,
 			}
 		}
 
 		if err != nil {
+			// MoneyPuck is down but the NHL document is fine: it carries everything
+			// the card needs except xG, so push with xG absent (0) rather than a
+			// 0-0 "Pregame" card.
 			log.Printf("ERROR: Failed to fetch and parse MoneyPuck data for game %s: %v", payload.Game.ID, err)
 		}
-
-		// Populate fields sourced from play-by-play data (not MoneyPuck CSV).
-		if gameData != nil {
-			gameData["gameState"] = FormatGameState(lastPlay)
-			gameData["lastPlayType"] = lastPlay.TypeDescKey
+		if gameData == nil {
+			gameData = make(map[string]string)
 		}
 
-		// Only run shootout adjustment when the fetch succeeded — a partial map
-		// could otherwise let the adjustment run on inconsistent data.
-		if err == nil && lastPlay.TypeDescKey == "game-end" && gameData != nil {
-			homeGoals, homeGOK := gameData["homeTeamGoals"]
-			awayGoals, awayGOK := gameData["awayTeamGoals"]
-			if homeGOK && awayGOK && homeGoals == awayGoals {
-				if shootoutErr := AdjustScoreForShootout(gameData); shootoutErr != nil {
-					log.Printf("Failed to adjust score for shootout: %v", shootoutErr)
-				}
-			}
-		}
+		gameData["homeTeamGoals"] = strconv.Itoa(resp.HomeTeam.Score)
+		gameData["awayTeamGoals"] = strconv.Itoa(resp.AwayTeam.Score)
+		gameData["gameState"] = FormatGameState(resp)
+		gameData["lastPlayType"] = lastPlayType(resp)
 
-		gp.NotificationService.SendGameEventNotifications(payload.Game, gameData)
+		// An empty gameState is "Pregame" on iOS, which is worse than no update.
+		if gameData["gameState"] == "" {
+			log.Printf("WARNING: empty gameState for game %s (state=%q); skipping notification", payload.Game.ID, resp.GameState)
+		} else {
+			gp.NotificationService.SendGameEventNotifications(payload.Game, gameData)
+		}
 	}
 
-	shouldReschedule := ShouldReschedule(payload, lastPlay)
-	log.Printf("Last play type: %s, Should reschedule: %v\n", lastPlay.TypeDescKey, shouldReschedule)
+	shouldReschedule := ShouldReschedule(payload, resp)
+	log.Printf("Last play type: %s, Should reschedule: %v\n", lastPlayType(resp), shouldReschedule)
 
 	return ProcessResult{
 		ShouldReschedule: shouldReschedule,
-		LastPlay:         lastPlay,
-		MaxPeriods:       maxPeriods,
+		Response:         resp,
 	}
 }
 
-// RescheduleInterval returns the next-check interval to use for the given last play.
-// Period-end events use the extended interval except in regular-season period 3,
-// where OT/game-end is imminent and the standard interval is used.
-func RescheduleInterval(lastPlay models.Play, maxPeriods *int, cfg *config.Config) time.Duration {
-	if lastPlay.TypeDescKey == "period-end" {
-		isRegularSeason := maxPeriods != nil
-		if isRegularSeason && lastPlay.PeriodDescriptor.Number == 3 {
-			return time.Duration(cfg.MessageIntervalSeconds) * time.Second
+// csvKeys drops the keys the processor supplies itself, leaving only what
+// MoneyPuck is the sole source for (expected goals).
+func csvKeys(required []string) []string {
+	keys := make([]string, 0, len(required))
+	for _, k := range required {
+		if _, skip := nonCSVKeys[k]; !skip {
+			keys = append(keys, k)
 		}
-		return time.Duration(cfg.PeriodEndIntervalSeconds) * time.Second
 	}
-	return time.Duration(cfg.MessageIntervalSeconds) * time.Second
+	return keys
 }
 
-// FormatGameState returns a formatted game state string based on the play data.
-// Returns "Final" for game-end, "Shootout" for SO, "X:XX left, OT" for overtime,
-// or "X:XX left, Nth period" for regular periods.
-func FormatGameState(play models.Play) string {
-	if play.TypeDescKey == "game-end" {
-		return "Final"
-	}
-
-	if play.TimeRemaining == "" {
+// lastPlayType returns "" for a nil response or one with no plays (pre-game, or
+// an update that arrived before the first event); "" matches no recompute type.
+func lastPlayType(resp *models.PlayByPlayResponse) string {
+	if resp == nil || len(resp.Plays) == 0 {
 		return ""
 	}
+	return resp.Plays[len(resp.Plays)-1].TypeDescKey
+}
 
-	switch play.PeriodDescriptor.PeriodType {
-	case "OT":
-		return fmt.Sprintf("%s left, OT", play.TimeRemaining)
-	case "SO":
-		return "Shootout"
-	default:
-		periodSuffix := map[int]string{1: "1st", 2: "2nd", 3: "3rd"}
-		suffix, ok := periodSuffix[play.PeriodDescriptor.Number]
-		if !ok {
-			suffix = fmt.Sprintf("%dth", play.PeriodDescriptor.Number)
+// IsFinal reports whether the game is over. Nil-safe: a nil response means the
+// fetch failed, which is not evidence the game ended. The game-end check backs up
+// gameState in case it lags the final horn.
+func IsFinal(resp *models.PlayByPlayResponse) bool {
+	if resp == nil {
+		return false
+	}
+	// OVER is the NHL's "game ended, not yet official" state; the iOS client
+	// treats it as final too (NHLGame.isFinal).
+	switch resp.GameState {
+	case "OVER", "OFF", "FINAL":
+		return true
+	}
+	return lastPlayType(resp) == "game-end"
+}
+
+// ShouldReschedule reports whether to poll again: not past the execution window
+// and the game is not over.
+func ShouldReschedule(payload models.Payload, resp *models.PlayByPlayResponse) bool {
+	if payload.ExecutionEnd != nil {
+		executionEnd, err := time.Parse(time.RFC3339, *payload.ExecutionEnd)
+		if err != nil {
+			log.Printf("Error parsing executionEnd: %v", err)
+		} else if time.Now().After(executionEnd) {
+			log.Printf("Max execution time (%s) is set and has been reached. Do not reschedule.", executionEnd.Format(time.RFC3339))
+			return false
 		}
-		return fmt.Sprintf("%s left, %s period", play.TimeRemaining, suffix)
+	} else {
+		log.Println("Max execution time not set, proceeding without time check.")
 	}
+
+	return !IsFinal(resp)
 }
 
-// AdjustScoreForShootout increments the winning team's score by 1 when the game
-// ends in a shootout. This is the shared implementation used by both handler modes.
-func AdjustScoreForShootout(gameData map[string]string) error {
-	homeScore, err := strconv.Atoi(gameData["homeTeamGoals"])
-	if err != nil {
-		return fmt.Errorf("invalid home goals: %w", err)
+// RescheduleInterval returns the next-check interval. Intermissions use the long
+// interval except from regulation's end onward in the regular season, where
+// overtime follows in about a minute. The playoffs keep the long interval there:
+// their breaks are full intermissions.
+func RescheduleInterval(resp *models.PlayByPlayResponse, cfg *config.Config) time.Duration {
+	short := time.Duration(cfg.MessageIntervalSeconds) * time.Second
+	if resp == nil || !resp.Clock.InIntermission {
+		return short
 	}
-
-	awayScore, err := strconv.Atoi(gameData["awayTeamGoals"])
-	if err != nil {
-		return fmt.Errorf("invalid away goals: %w", err)
+	if resp.PeriodDescriptor.Number >= regulationPeriods && resp.GameType == gameTypeRegularSeason {
+		return short
 	}
-
-	homeSOGoals, err := parseShootoutGoals(gameData["homeTeamShootOutGoals"])
-	if err != nil {
-		return fmt.Errorf("invalid home shootout goals: %w", err)
-	}
-
-	awaySOGoals, err := parseShootoutGoals(gameData["awayTeamShootOutGoals"])
-	if err != nil {
-		return fmt.Errorf("invalid away shootout goals: %w", err)
-	}
-
-	if homeSOGoals > awaySOGoals {
-		homeScore++
-	} else if awaySOGoals > homeSOGoals {
-		awayScore++
-	}
-
-	gameData["homeTeamGoals"] = strconv.Itoa(homeScore)
-	gameData["awayTeamGoals"] = strconv.Itoa(awayScore)
-
-	return nil
+	return time.Duration(cfg.PeriodEndIntervalSeconds) * time.Second
 }
 
-// parseShootoutGoals treats a missing/empty shootout column as 0 goals rather
-// than an error, since a required-key mismatch upstream (or a non-shootout
-// game) can leave the field blank even when the CSV request otherwise succeeds.
-func parseShootoutGoals(value string) (int, error) {
-	if value == "" {
-		return 0, nil
+// FormatGameState returns the display string for the game's current state, derived
+// from the document's top-level fields rather than the last play: "Final",
+// "Shootout", "End of 2nd" during an intermission, "X:XX left, OT" in overtime,
+// or "X:XX left, Nth period". It returns "" when there is nothing to show (a
+// game that has not started, or no clock).
+func FormatGameState(resp *models.PlayByPlayResponse) string {
+	if resp == nil {
+		return ""
 	}
-	return strconv.Atoi(value)
+	if IsFinal(resp) {
+		return "Final"
+	}
+	// Not started: the API still reports period 1 and a full 20:00 clock, so
+	// falling through would render "20:00 left, 1st period" before puck drop.
+	if resp.GameState == "FUT" || resp.GameState == "PRE" {
+		return ""
+	}
+	pd := resp.PeriodDescriptor
+	if pd.PeriodType == "SO" {
+		return "Shootout"
+	}
+	if resp.Clock.InIntermission {
+		return "End of " + periodSuffix(pd)
+	}
+	if resp.Clock.TimeRemaining == "" {
+		return ""
+	}
+	if pd.PeriodType == "OT" {
+		return fmt.Sprintf("%s left, OT", resp.Clock.TimeRemaining)
+	}
+	return fmt.Sprintf("%s left, %s period", resp.Clock.TimeRemaining, periodSuffix(pd))
+}
+
+// periodSuffix is "1st", "2nd", "3rd", "4th"... for regulation and "OT" for every
+// overtime period (a playoff double overtime also reads "OT").
+func periodSuffix(pd models.PeriodDescriptor) string {
+	if pd.PeriodType == "OT" {
+		return "OT"
+	}
+	switch pd.Number {
+	case 1:
+		return "1st"
+	case 2:
+		return "2nd"
+	case 3:
+		return "3rd"
+	}
+	return fmt.Sprintf("%dth", pd.Number)
 }

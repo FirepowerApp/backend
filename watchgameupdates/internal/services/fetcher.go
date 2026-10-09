@@ -133,7 +133,7 @@ func (f *HTTPGameDataFetcher) FetchGameData(gameID string, dataSource string) ([
 	url := fmt.Sprintf("%s/moneypuck/gameData/%s/%s.csv", statsAPIBaseURL, season, gameID)
 	log.Printf("DEBUG: Requesting URL: %s", url)
 
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		log.Printf("ERROR: HTTP request failed for game %s: %v", gameID, err)
 		return nil, err

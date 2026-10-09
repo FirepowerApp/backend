@@ -1,0 +1,13 @@
+package services
+
+// Trimmed real NHL play-by-play responses (top-level game fields plus the last
+// few plays), captured from api-web.nhle.com. They are the oracle for the OT and
+// shootout wire output.
+
+// fixtureOT is game 2026020026, MTL 5 @ PIT 6, decided in overtime. The last play
+// is a period-end at 03:27 remaining, yet the game is over (gameState OFF).
+const fixtureOT = `{"gameType":2,"gameState":"OFF","periodDescriptor":{"number":4,"periodType":"OT","maxRegulationPeriods":3},"clock":{"timeRemaining":"03:27","secondsRemaining":207,"running":false,"inIntermission":false},"homeTeam":{"abbrev":"PIT","score":6},"awayTeam":{"abbrev":"MTL","score":5},"plays":[{"typeDescKey":"missed-shot","periodDescriptor":{"number":4,"periodType":"OT","maxRegulationPeriods":3},"timeInPeriod":"00:36","timeRemaining":"04:24"},{"typeDescKey":"missed-shot","periodDescriptor":{"number":4,"periodType":"OT","maxRegulationPeriods":3},"timeInPeriod":"00:48","timeRemaining":"04:12"},{"typeDescKey":"goal","periodDescriptor":{"number":4,"periodType":"OT","maxRegulationPeriods":3},"timeInPeriod":"01:33","timeRemaining":"03:27"},{"typeDescKey":"period-end","periodDescriptor":{"number":4,"periodType":"OT","maxRegulationPeriods":3},"timeInPeriod":"01:33","timeRemaining":"03:27"},{"typeDescKey":"game-end","periodDescriptor":{"number":4,"periodType":"OT","maxRegulationPeriods":3},"timeInPeriod":"01:33","timeRemaining":"03:27"}]}`
+
+// fixtureSO is game 2025021018, PIT 4 @ CAR 5, decided in a shootout. The NHL
+// score already includes the shootout decider.
+const fixtureSO = `{"gameType":2,"gameState":"OFF","periodDescriptor":{"number":5,"periodType":"SO","maxRegulationPeriods":3},"clock":{"timeRemaining":"00:00","secondsRemaining":0,"running":false,"inIntermission":false},"homeTeam":{"abbrev":"CAR","score":5},"awayTeam":{"abbrev":"PIT","score":4},"plays":[{"typeDescKey":"goal","periodDescriptor":{"number":5,"periodType":"SO","maxRegulationPeriods":3},"timeInPeriod":"00:00","timeRemaining":"00:00"},{"typeDescKey":"shot-on-goal","periodDescriptor":{"number":5,"periodType":"SO","maxRegulationPeriods":3},"timeInPeriod":"00:00","timeRemaining":"00:00"},{"typeDescKey":"shootout-complete","periodDescriptor":{"number":5,"periodType":"SO","maxRegulationPeriods":3},"timeInPeriod":"00:00","timeRemaining":"00:00"},{"typeDescKey":"period-end","periodDescriptor":{"number":5,"periodType":"SO","maxRegulationPeriods":3},"timeInPeriod":"00:00","timeRemaining":"00:00"},{"typeDescKey":"game-end","periodDescriptor":{"number":5,"periodType":"SO","maxRegulationPeriods":3},"timeInPeriod":"00:00","timeRemaining":"00:00"}]}`

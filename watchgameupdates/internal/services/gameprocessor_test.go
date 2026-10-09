@@ -8,399 +8,129 @@ import (
 	"watchgameupdates/internal/models"
 )
 
-type adjustScoreTestCase struct {
-	name              string
-	homeGoals         string
-	awayGoals         string
-	homeShootOutGoals string
-	awayShootOutGoals string
-	expectedHomeGoals string
-	expectedAwayGoals string
-	expectError       bool
-}
-
-func TestAdjustScoreForShootout(t *testing.T) {
-	testCases := []adjustScoreTestCase{
-		{
-			name:              "TiedGoals_HomeWinsShootout",
-			homeGoals:         "2",
-			awayGoals:         "2",
-			homeShootOutGoals: "2",
-			awayShootOutGoals: "1",
-			expectedHomeGoals: "3",
-			expectedAwayGoals: "2",
-			expectError:       false,
-		},
-		{
-			name:              "TiedGoals_AwayWinsShootout",
-			homeGoals:         "2",
-			awayGoals:         "2",
-			homeShootOutGoals: "1",
-			awayShootOutGoals: "3",
-			expectedHomeGoals: "2",
-			expectedAwayGoals: "3",
-			expectError:       false,
-		},
-		{
-			name:              "TiedGoals_TiedShootout",
-			homeGoals:         "3",
-			awayGoals:         "3",
-			homeShootOutGoals: "1",
-			awayShootOutGoals: "1",
-			expectedHomeGoals: "3",
-			expectedAwayGoals: "3",
-			expectError:       false,
-		},
-		{
-			name:              "DifferentInitialScores_HomeWinsShootout",
-			homeGoals:         "1",
-			awayGoals:         "1",
-			homeShootOutGoals: "3",
-			awayShootOutGoals: "2",
-			expectedHomeGoals: "2",
-			expectedAwayGoals: "1",
-			expectError:       false,
-		},
-		{
-			name:              "HighScoreTie_AwayWinsShootout",
-			homeGoals:         "5",
-			awayGoals:         "5",
-			homeShootOutGoals: "0",
-			awayShootOutGoals: "1",
-			expectedHomeGoals: "5",
-			expectedAwayGoals: "6",
-			expectError:       false,
-		},
-		{
-			name:              "InvalidHomeGoals",
-			homeGoals:         "invalid",
-			awayGoals:         "2",
-			homeShootOutGoals: "1",
-			awayShootOutGoals: "2",
-			expectError:       true,
-		},
-		{
-			name:              "InvalidAwayGoals",
-			homeGoals:         "2",
-			awayGoals:         "invalid",
-			homeShootOutGoals: "1",
-			awayShootOutGoals: "2",
-			expectError:       true,
-		},
-		{
-			name:              "InvalidHomeShootoutGoals",
-			homeGoals:         "2",
-			awayGoals:         "2",
-			homeShootOutGoals: "invalid",
-			awayShootOutGoals: "2",
-			expectError:       true,
-		},
-		{
-			name:              "InvalidAwayShootoutGoals",
-			homeGoals:         "2",
-			awayGoals:         "2",
-			homeShootOutGoals: "1",
-			awayShootOutGoals: "invalid",
-			expectError:       true,
-		},
-		{
-			name:              "MissingHomeGoals",
-			homeGoals:         "",
-			awayGoals:         "2",
-			homeShootOutGoals: "1",
-			awayShootOutGoals: "2",
-			expectError:       true,
-		},
-		{
-			name:              "MissingAwayGoals",
-			homeGoals:         "2",
-			awayGoals:         "",
-			homeShootOutGoals: "1",
-			awayShootOutGoals: "2",
-			expectError:       true,
-		},
-		{
-			// A missing shootout column (e.g. a notifier that doesn't request it)
-			// is treated as 0 goals rather than an error, so the away team's
-			// shootout goal still breaks the tie.
-			name:              "MissingHomeShootoutGoals",
-			homeGoals:         "2",
-			awayGoals:         "2",
-			homeShootOutGoals: "",
-			awayShootOutGoals: "2",
-			expectedHomeGoals: "2",
-			expectedAwayGoals: "3",
-			expectError:       false,
-		},
-		{
-			name:              "MissingAwayShootoutGoals",
-			homeGoals:         "2",
-			awayGoals:         "2",
-			homeShootOutGoals: "1",
-			awayShootOutGoals: "",
-			expectedHomeGoals: "3",
-			expectedAwayGoals: "2",
-			expectError:       false,
-		},
-		{
-			name:              "MissingBothShootoutGoals",
-			homeGoals:         "2",
-			awayGoals:         "2",
-			homeShootOutGoals: "",
-			awayShootOutGoals: "",
-			expectedHomeGoals: "2",
-			expectedAwayGoals: "2",
-			expectError:       false,
-		},
+// pbp builds a play-by-play response for table tests. Pass "" for lastPlay to get
+// an empty plays slice.
+func pbp(gameType int, state string, num int, periodType string, inIntermission bool, clock, lastPlay string) *models.PlayByPlayResponse {
+	r := &models.PlayByPlayResponse{
+		GameType:         gameType,
+		GameState:        state,
+		PeriodDescriptor: models.PeriodDescriptor{Number: num, PeriodType: periodType},
+		Clock:            models.Clock{TimeRemaining: clock, InIntermission: inIntermission},
 	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			gameData := buildShootoutGameData(tc)
-
-			err := AdjustScoreForShootout(gameData)
-
-			if tc.expectError {
-				if err == nil {
-					t.Errorf("Expected error but got nil")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error: %v", err)
-				}
-
-				actualHomeGoals := gameData["homeTeamGoals"]
-				actualAwayGoals := gameData["awayTeamGoals"]
-
-				if actualHomeGoals != tc.expectedHomeGoals {
-					t.Errorf("Expected homeTeamGoals to be '%s', got '%s'", tc.expectedHomeGoals, actualHomeGoals)
-				}
-
-				if actualAwayGoals != tc.expectedAwayGoals {
-					t.Errorf("Expected awayTeamGoals to be '%s', got '%s'", tc.expectedAwayGoals, actualAwayGoals)
-				}
-			}
-		})
+	if lastPlay != "" {
+		r.Plays = []models.Play{{TypeDescKey: lastPlay}}
 	}
-}
-
-func buildShootoutGameData(tc adjustScoreTestCase) map[string]string {
-	data := make(map[string]string)
-	if tc.homeGoals != "" {
-		data["homeTeamGoals"] = tc.homeGoals
-	}
-	if tc.awayGoals != "" {
-		data["awayTeamGoals"] = tc.awayGoals
-	}
-	if tc.homeShootOutGoals != "" {
-		data["homeTeamShootOutGoals"] = tc.homeShootOutGoals
-	}
-	if tc.awayShootOutGoals != "" {
-		data["awayTeamShootOutGoals"] = tc.awayShootOutGoals
-	}
-	return data
+	return r
 }
 
 func TestFormatGameState(t *testing.T) {
 	testCases := []struct {
 		name     string
-		play     models.Play
+		resp     *models.PlayByPlayResponse
 		expected string
 	}{
-		{
-			name: "GameEnd_ReturnsFinal",
-			play: models.Play{
-				TypeDescKey:   "game-end",
-				TimeRemaining: "00:00",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     3,
-					PeriodType: "REG",
-				},
-			},
-			expected: "Final",
-		},
-		{
-			name: "FirstPeriod_ReturnsCorrectSuffix",
-			play: models.Play{
-				TypeDescKey:   "shot-on-goal",
-				TimeRemaining: "15:32",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     1,
-					PeriodType: "REG",
-				},
-			},
-			expected: "15:32 left, 1st period",
-		},
-		{
-			name: "SecondPeriod_ReturnsCorrectSuffix",
-			play: models.Play{
-				TypeDescKey:   "goal",
-				TimeRemaining: "06:56",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     2,
-					PeriodType: "REG",
-				},
-			},
-			expected: "06:56 left, 2nd period",
-		},
-		{
-			name: "ThirdPeriod_ReturnsCorrectSuffix",
-			play: models.Play{
-				TypeDescKey:   "missed-shot",
-				TimeRemaining: "01:45",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     3,
-					PeriodType: "REG",
-				},
-			},
-			expected: "01:45 left, 3rd period",
-		},
-		{
-			name: "FourthPeriod_ReturnsFallbackSuffix",
-			play: models.Play{
-				TypeDescKey:   "blocked-shot",
-				TimeRemaining: "10:00",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     4,
-					PeriodType: "REG",
-				},
-			},
-			expected: "10:00 left, 4th period",
-		},
-		{
-			name: "Overtime_ReturnsOTFormat",
-			play: models.Play{
-				TypeDescKey:   "shot-on-goal",
-				TimeRemaining: "03:22",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     4,
-					PeriodType: "OT",
-				},
-			},
-			expected: "03:22 left, OT",
-		},
-		{
-			name: "Shootout_ReturnsShootout",
-			play: models.Play{
-				TypeDescKey:   "goal",
-				TimeRemaining: "00:00",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     5,
-					PeriodType: "SO",
-				},
-			},
-			expected: "Shootout",
-		},
-		{
-			name: "EmptyTimeRemaining_ReturnsEmptyString",
-			play: models.Play{
-				TypeDescKey:   "period-start",
-				TimeRemaining: "",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     1,
-					PeriodType: "REG",
-				},
-			},
-			expected: "",
-		},
-		{
-			name: "PeriodDescriptorNumber_UsedInsteadOfPeriodField",
-			play: models.Play{
-				TypeDescKey:   "shot-on-goal",
-				TimeRemaining: "12:00",
-				Period:        0, // This field is not populated by NHL API
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number:     2, // This is what the NHL API populates
-					PeriodType: "REG",
-				},
-			},
-			expected: "12:00 left, 2nd period",
-		},
+		// Live: these strings are a wire contract pinned since #32; do not change.
+		{"FirstPeriod", pbp(2, "LIVE", 1, "REG", false, "15:32", "shot-on-goal"), "15:32 left, 1st period"},
+		{"SecondPeriod", pbp(2, "LIVE", 2, "REG", false, "06:56", "goal"), "06:56 left, 2nd period"},
+		{"ThirdPeriod", pbp(2, "LIVE", 3, "REG", false, "01:45", "missed-shot"), "01:45 left, 3rd period"},
+		{"FourthRegPeriodFallbackSuffix", pbp(2, "LIVE", 4, "REG", false, "10:00", "blocked-shot"), "10:00 left, 4th period"},
+		{"Overtime", pbp(2, "LIVE", 4, "OT", false, "03:22", "shot-on-goal"), "03:22 left, OT"},
+		{"PlayoffDoubleOvertimeStillReadsOT", pbp(3, "LIVE", 5, "OT", false, "04:12", "shot-on-goal"), "04:12 left, OT"},
+		{"ShootoutInProgress", pbp(2, "LIVE", 5, "SO", false, "00:00", "shot-on-goal"), "Shootout"},
+
+		// Final: the reported bug. The OT period-end still carries the clock from the
+		// winning goal, but the document says the game is over.
+		{"OTPeriodEndOnAGoalIsFinalNotARunningClock", pbp(2, "OFF", 4, "OT", false, "03:27", "period-end"), "Final"},
+		{"GameEnd", pbp(2, "LIVE", 3, "REG", false, "00:00", "game-end"), "Final"},
+		{"GameStateFinal", pbp(2, "FINAL", 3, "REG", false, "00:00", "shot-on-goal"), "Final"},
+		// OVER: the game has ended but is not yet official. The last play can still be
+		// the period-end carrying the winning goal's clock.
+		{"GameStateOverWithPeriodEndAsLastPlay", pbp(2, "OVER", 4, "OT", false, "03:27", "period-end"), "Final"},
+		{"DecidedShootoutIsFinalNotShootout", pbp(2, "OFF", 5, "SO", false, "00:00", "game-end"), "Final"},
+
+		// Intermissions: the one new family of wire values.
+		{"EndOfFirst", pbp(2, "LIVE", 1, "REG", true, "17:42", "period-end"), "End of 1st"},
+		{"EndOfSecond", pbp(2, "LIVE", 2, "REG", true, "17:42", "period-end"), "End of 2nd"},
+		{"EndOfThird", pbp(2, "LIVE", 3, "REG", true, "01:00", "period-end"), "End of 3rd"},
+		{"EndOfOT", pbp(3, "LIVE", 4, "OT", true, "17:00", "period-end"), "End of OT"},
+
+		// Nothing to show: an empty string is "Pregame" on iOS, so callers skip the push.
+		{"FutureGameHasFullClockButNotStarted", pbp(2, "FUT", 1, "REG", false, "20:00", ""), ""},
+		{"PreGame", pbp(2, "PRE", 1, "REG", false, "20:00", "period-start"), ""},
+		{"LiveWithNoClock", pbp(2, "LIVE", 1, "REG", false, "", "period-start"), ""},
+		{"NilResponse", nil, ""},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := FormatGameState(tc.play)
-
-			if result != tc.expected {
-				t.Errorf("Expected '%s', got '%s'", tc.expected, result)
+			if got := FormatGameState(tc.resp); got != tc.expected {
+				t.Errorf("expected %q, got %q", tc.expected, got)
 			}
 		})
 	}
 }
 
-func TestPeriodEndInterval(t *testing.T) {
-	cfg := &config.Config{
-		MessageIntervalSeconds:   60,
-		PeriodEndIntervalSeconds: 1200,
-	}
-	maxPeriods := 5
+func TestRescheduleInterval(t *testing.T) {
+	cfg := &config.Config{MessageIntervalSeconds: 60, PeriodEndIntervalSeconds: 1200}
+	short, long := 60*time.Second, 1200*time.Second
 
 	testCases := []struct {
-		name       string
-		period     int
-		maxPeriods *int
-		expected   time.Duration
+		name     string
+		resp     *models.PlayByPlayResponse
+		expected time.Duration
 	}{
-		{
-			name:       "RegularSeason_Period1_ReturnsExtendedInterval",
-			period:     1,
-			maxPeriods: &maxPeriods,
-			expected:   1200 * time.Second,
-		},
-		{
-			name:       "RegularSeason_Period2_ReturnsExtendedInterval",
-			period:     2,
-			maxPeriods: &maxPeriods,
-			expected:   1200 * time.Second,
-		},
-		{
-			name:       "RegularSeason_Period3_ReturnsStandardInterval",
-			period:     3,
-			maxPeriods: &maxPeriods,
-			expected:   60 * time.Second,
-		},
-		{
-			name:       "Playoffs_Period1_ReturnsExtendedInterval",
-			period:     1,
-			maxPeriods: nil,
-			expected:   1200 * time.Second,
-		},
-		{
-			name:       "Playoffs_Period2_ReturnsExtendedInterval",
-			period:     2,
-			maxPeriods: nil,
-			expected:   1200 * time.Second,
-		},
-		{
-			name:       "Playoffs_Period3_ReturnsExtendedInterval",
-			period:     3,
-			maxPeriods: nil,
-			expected:   1200 * time.Second,
-		},
-		{
-			name:       "Playoffs_OTPeriod4_ReturnsExtendedInterval",
-			period:     4,
-			maxPeriods: nil,
-			expected:   1200 * time.Second,
-		},
+		{"NilResponse", nil, short},
+		{"NotInIntermission", pbp(2, "LIVE", 2, "REG", false, "10:00", "shot-on-goal"), short},
+		// The reported bug: an OT period-end on a goal is not an intermission.
+		{"OTPeriodEndOnAGoalIsNotAnIntermission", pbp(2, "OFF", 4, "OT", false, "03:27", "period-end"), short},
+
+		{"RegularSeason_P1", pbp(2, "LIVE", 1, "REG", true, "17:42", "period-end"), long},
+		{"RegularSeason_P2", pbp(2, "LIVE", 2, "REG", true, "17:42", "period-end"), long},
+		// Overtime follows in about a minute.
+		{"RegularSeason_P3", pbp(2, "LIVE", 3, "REG", true, "01:00", "period-end"), short},
+		{"RegularSeason_P4", pbp(2, "LIVE", 4, "OT", true, "01:00", "period-end"), short},
+
+		// Playoff breaks are full intermissions. Asserted before this change at
+		// Playoffs_Period3 / Playoffs_OTPeriod4; sending 60s here would push ~18
+		// identical Live Activity updates per break.
+		{"Playoffs_P1", pbp(3, "LIVE", 1, "REG", true, "17:42", "period-end"), long},
+		{"Playoffs_P2", pbp(3, "LIVE", 2, "REG", true, "17:42", "period-end"), long},
+		{"Playoffs_P3", pbp(3, "LIVE", 3, "REG", true, "17:42", "period-end"), long},
+		{"Playoffs_OT1", pbp(3, "LIVE", 4, "OT", true, "17:42", "period-end"), long},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			play := models.Play{
-				TypeDescKey: "period-end",
-				PeriodDescriptor: models.PeriodDescriptor{
-					Number: tc.period,
-				},
-			}
-
-			result := RescheduleInterval(play, tc.maxPeriods, cfg)
-
-			if result != tc.expected {
-				t.Errorf("Expected %v, got %v", tc.expected, result)
+			if got := RescheduleInterval(tc.resp, cfg); got != tc.expected {
+				t.Errorf("expected %v, got %v", tc.expected, got)
 			}
 		})
+	}
+}
+
+func TestIsFinalAndLastPlayType(t *testing.T) {
+	if IsFinal(nil) {
+		t.Error("a nil response (failed fetch) must not read as a finished game")
+	}
+	if got := lastPlayType(nil); got != "" {
+		t.Errorf("expected empty for nil, got %q", got)
+	}
+	if got := lastPlayType(pbp(2, "LIVE", 1, "REG", false, "20:00", "")); got != "" {
+		t.Errorf("expected empty for no plays, got %q", got)
+	}
+	if IsFinal(pbp(2, "LIVE", 1, "REG", false, "20:00", "")) {
+		t.Error("a live game with no plays yet is not final")
+	}
+}
+
+func TestCSVKeysKeepsOnlyWhatMoneyPuckAloneProvides(t *testing.T) {
+	required := []string{
+		"homeTeamGoals", "awayTeamGoals", "homeTeamExpectedGoals", "awayTeamExpectedGoals",
+		"gameState", "homeTeamAbbrev", "awayTeamAbbrev", "lastPlayType",
+	}
+	got := csvKeys(required)
+	if len(got) != 2 || got[0] != "homeTeamExpectedGoals" || got[1] != "awayTeamExpectedGoals" {
+		t.Errorf("expected only the two xG keys, got %v", got)
 	}
 }
 
@@ -469,45 +199,57 @@ func TestShouldSkipExecution(t *testing.T) {
 }
 
 func TestShouldReschedule(t *testing.T) {
-	t.Run("NonGameEnd_ShouldReschedule", func(t *testing.T) {
-		future := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
-		payload := models.Payload{
-			Game:         models.Game{ID: "2024030411"},
-			ExecutionEnd: &future,
-		}
-		lastPlay := models.Play{TypeDescKey: "shot-on-goal"}
+	future := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
+	past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
+	game := models.Game{ID: "2024030411"}
 
-		result := ShouldReschedule(payload, lastPlay)
-		if !result {
-			t.Error("Expected ShouldReschedule=true for non game-end play")
-		}
-	})
+	testCases := []struct {
+		name     string
+		end      *string
+		resp     *models.PlayByPlayResponse
+		expected bool
+	}{
+		{"NonFinal", &future, pbp(2, "LIVE", 2, "REG", false, "10:00", "shot-on-goal"), true},
+		{"GameEnd", &future, pbp(2, "LIVE", 3, "REG", false, "00:00", "game-end"), false},
+		// The OT bug fixture: the last play is a period-end, but the game is over.
+		{"GameStateOffWithPeriodEndAsLastPlay", &future, pbp(2, "OFF", 4, "OT", false, "03:27", "period-end"), false},
+		{"GameStateOverWithPeriodEndAsLastPlay", &future, pbp(2, "OVER", 4, "OT", false, "03:27", "period-end"), false},
+		// A failed fetch is not evidence the game ended: keep polling.
+		{"NilResponseKeepsPolling", &future, nil, true},
+		{"NilExecutionEnd", nil, pbp(2, "LIVE", 2, "REG", false, "10:00", "shot-on-goal"), true},
+		{"PastExecutionEnd", &past, pbp(2, "LIVE", 2, "REG", false, "10:00", "shot-on-goal"), false},
+		{"PastExecutionEndOnFailedFetch", &past, nil, false},
+	}
 
-	t.Run("GameEnd_ShouldNotReschedule", func(t *testing.T) {
-		future := time.Now().Add(1 * time.Hour).Format(time.RFC3339)
-		payload := models.Payload{
-			Game:         models.Game{ID: "2024030411"},
-			ExecutionEnd: &future,
-		}
-		lastPlay := models.Play{TypeDescKey: "game-end"}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := models.Payload{Game: game, ExecutionEnd: tc.end}
+			if got := ShouldReschedule(payload, tc.resp); got != tc.expected {
+				t.Errorf("expected %v, got %v", tc.expected, got)
+			}
+		})
+	}
+}
 
-		result := ShouldReschedule(payload, lastPlay)
-		if result {
-			t.Error("Expected ShouldReschedule=false for game-end play")
-		}
-	})
+func TestNextCheckInterval(t *testing.T) {
+	cfg := &config.Config{MessageIntervalSeconds: 60, PeriodEndIntervalSeconds: 1200}
 
-	t.Run("PastExecutionEnd_ShouldNotReschedule", func(t *testing.T) {
-		past := time.Now().Add(-1 * time.Hour).Format(time.RFC3339)
-		payload := models.Payload{
-			Game:         models.Game{ID: "2024030411"},
-			ExecutionEnd: &past,
-		}
-		lastPlay := models.Play{TypeDescKey: "shot-on-goal"}
+	// An upstream failure leaves Response nil: retry in ParseErrorRetryInterval and
+	// do not touch the response. This ordering is what keeps a nil Response safe.
+	failed := ProcessResult{RetryAfterDataError: true}
+	if got := failed.NextCheckInterval(cfg); got != ParseErrorRetryInterval {
+		t.Errorf("expected %v after an upstream failure, got %v", ParseErrorRetryInterval, got)
+	}
 
-		result := ShouldReschedule(payload, lastPlay)
-		if result {
-			t.Error("Expected ShouldReschedule=false when execution end has passed")
-		}
-	})
+	// A MoneyPuck parse error carries a real Response but still retries quickly,
+	// even mid-way through an intermission that would otherwise wait 20 minutes.
+	parseErr := ProcessResult{RetryAfterDataError: true, Response: pbp(2, "LIVE", 1, "REG", true, "17:42", "period-end")}
+	if got := parseErr.NextCheckInterval(cfg); got != ParseErrorRetryInterval {
+		t.Errorf("expected %v on a parse error, got %v", ParseErrorRetryInterval, got)
+	}
+
+	normal := ProcessResult{Response: pbp(2, "LIVE", 1, "REG", true, "17:42", "period-end")}
+	if got := normal.NextCheckInterval(cfg); got != 1200*time.Second {
+		t.Errorf("expected the document to decide (1200s), got %v", got)
+	}
 }

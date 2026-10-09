@@ -11,6 +11,7 @@ import (
 
 	"watchgameupdates/config"
 	"watchgameupdates/internal/models"
+	"watchgameupdates/internal/services"
 
 	"github.com/hibiken/asynq"
 )
@@ -223,5 +224,83 @@ func TestScheduleNextCheck_EnqueueError(t *testing.T) {
 	err := h.scheduleNextCheck(payload, time.Duration(cfg.MessageIntervalSeconds)*time.Second)
 	if err == nil {
 		t.Error("Expected error when enqueue fails, got nil")
+	}
+}
+
+// The worker used to wait a flat MessageIntervalSeconds, which would poll straight
+// through a 20-minute intermission. It now asks the same function the HTTP path
+// does, so a playoff intermission waits PeriodEndIntervalSeconds.
+func TestProcessTask_IntermissionUsesSharedRescheduleInterval(t *testing.T) {
+	pbp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"gameType":3,"gameState":"LIVE","periodDescriptor":{"number":2,"periodType":"REG"},` +
+			`"clock":{"timeRemaining":"17:42","inIntermission":true},"homeTeam":{"score":1},"awayTeam":{"score":1},` +
+			`"plays":[{"typeDescKey":"period-end","periodDescriptor":{"number":2,"periodType":"REG"},"timeRemaining":"00:00"}]}`))
+	}))
+	defer pbp.Close()
+	t.Setenv("PLAYBYPLAY_API_BASE_URL", pbp.URL)
+	mp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("id,homeTeamExpectedGoals\n1,1.0\n"))
+	}))
+	defer mp.Close()
+	t.Setenv("STATS_API_BASE_URL", mp.URL)
+
+	cfg := &config.Config{MessageIntervalSeconds: 30, PeriodEndIntervalSeconds: 1200}
+	enqueuer := &mockEnqueuer{}
+	h := NewWatchGameUpdatesHandler(cfg, enqueuer)
+
+	data, _ := json.Marshal(models.Payload{Game: models.Game{ID: "2025030411"}})
+	if err := h.ProcessTask(context.Background(), asynq.NewTask(TypeWatchGameUpdates, data)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if enqueuer.taskCount() != 1 {
+		t.Fatalf("expected one rescheduled task, got %d", enqueuer.taskCount())
+	}
+
+	enqueuer.mu.Lock()
+	opts := enqueuer.enqueued[0].opts
+	enqueuer.mu.Unlock()
+	var got time.Duration
+	for _, o := range opts {
+		if o.Type() == asynq.ProcessInOpt {
+			got = o.Value().(time.Duration)
+		}
+	}
+	if got != 1200*time.Second {
+		t.Errorf("expected the worker to wait the intermission interval (1200s), got %v", got)
+	}
+}
+
+// With no play-by-play there is no Response, so the worker must retry soon without
+// ever deriving an interval from it. The HTTP path has the same rule; this pins the
+// worker's wiring, which otherwise only fails in production.
+func TestProcessTask_PlayByPlayFailureRetriesInParseErrorInterval(t *testing.T) {
+	pbp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer pbp.Close()
+	t.Setenv("PLAYBYPLAY_API_BASE_URL", pbp.URL)
+
+	enqueuer := &mockEnqueuer{}
+	h := NewWatchGameUpdatesHandler(&config.Config{MessageIntervalSeconds: 30, PeriodEndIntervalSeconds: 1200}, enqueuer)
+
+	data, _ := json.Marshal(models.Payload{Game: models.Game{ID: "2025030411"}})
+	if err := h.ProcessTask(context.Background(), asynq.NewTask(TypeWatchGameUpdates, data)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if enqueuer.taskCount() != 1 {
+		t.Fatalf("expected one retry task, got %d", enqueuer.taskCount())
+	}
+
+	enqueuer.mu.Lock()
+	opts := enqueuer.enqueued[0].opts
+	enqueuer.mu.Unlock()
+	var got time.Duration
+	for _, o := range opts {
+		if o.Type() == asynq.ProcessInOpt {
+			got = o.Value().(time.Duration)
+		}
+	}
+	if got != services.ParseErrorRetryInterval {
+		t.Errorf("expected the %v retry interval, got %v", services.ParseErrorRetryInterval, got)
 	}
 }

@@ -87,7 +87,7 @@ make watch TEAM=COL    # E2E live test: schedule today's game and follow logs
 | Package | Responsibility |
 |---|---|
 | `handlers/` | HTTP request handling |
-| `services/` | Business logic (fetcher, play-by-play, rescheduler) |
+| `services/` | Business logic (fetcher, play-by-play, game processor incl. reschedule decision) |
 | `tasks/` | Google Cloud Tasks integration |
 | `season/` | Offseason detection (live NHL API probe) and live/emulator DataSource routing, staging only |
 | `models/` | Data structures (Payload, Play, PlayByPlayResponse) |

@@ -295,7 +295,7 @@ kubectl -n firepower logs -l app=backend --tail=30
 **Tuning reschedule intervals:** `MESSAGE_INTERVAL_SECONDS` controls how frequently the
 handler re-checks a live game (default 60s). During an intermission, the service uses
 `PERIOD_END_INTERVAL_SECONDS` instead (default 1200s / 20 minutes) to avoid unnecessary
-polling. The exception is the end of regulation in the regular season, where overtime
+polling. The exception is the end of regulation outside the playoffs, where overtime
 follows in about a minute, so the short interval is kept.
 
 ## Testing

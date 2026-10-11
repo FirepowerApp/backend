@@ -115,12 +115,13 @@ func TestProcessGameUpdate_CSVParseErrorSkipsNotifyAndRetries(t *testing.T) {
 }
 
 // TestProcessGameUpdate_ValidCSVNotifies is the control: a well-formed CSV must
-// still reach the notifier and must not request the parse-error retry.
+// reach the notifier (its xG, the only thing MoneyPuck supplies now) and must not
+// request the parse-error retry.
 func TestProcessGameUpdate_ValidCSVNotifies(t *testing.T) {
 	servePBP(t, liveSecondPeriod)
-	serveCSV(t, "id,homeTeamGoals\n1,2\n")
+	serveCSV(t, xgCSV)
 
-	notifier := &recordingNotifier{}
+	notifier := &recordingNotifier{keys: allPushKeys}
 	gp, payload := processWith(notifier)
 
 	result := gp.ProcessGameUpdate(payload)
@@ -128,7 +129,11 @@ func TestProcessGameUpdate_ValidCSVNotifies(t *testing.T) {
 	if result.RetryAfterDataError {
 		t.Error("expected RetryAfterDataError=false for a valid CSV")
 	}
-	notifier.pushed(t)
+	data := notifier.pushed(t)
+	if data["homeTeamExpectedGoals"] != "2.5" || data["awayTeamExpectedGoals"] != "1.5" {
+		t.Errorf("expected the CSV's xG 2.5/1.5 to reach the push, got %q/%q",
+			data["homeTeamExpectedGoals"], data["awayTeamExpectedGoals"])
+	}
 }
 
 // A response without the game-level fields (the shape the staging game data

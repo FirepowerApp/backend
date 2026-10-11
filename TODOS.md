@@ -27,7 +27,9 @@
 - **Why:** The backend now derives state, clock and score from those fields. The
   emulator (`internal/models/play.go`) serves only `maxPeriods` and `plays`, so in
   emulator mode `gameState` is empty and every push is suppressed
-  (`TestProcessGameUpdate_ResponseWithoutGameFieldsSendsNothing` pins this).
+  (`TestProcessGameUpdate_ResponseWithoutGameFieldsSendsNothing` pins this for ordinary plays).
+  Exception: a `game-end` play still makes `IsFinal` true, so an emulator game would push "Final" with
+  a 0-0 score, since the emulator also omits `homeTeam.score`/`awayTeam.score`.
 - **Context:** Emulator mode is staging-only and only active in the offseason, so
   nothing is affected while the season is live. It breaks the first time staging
   routes to the emulator after this ships. The emulator is a separate repo

@@ -30,8 +30,9 @@ var nonCSVKeys = map[string]struct{}{
 }
 
 const (
-	// gameTypeRegularSeason is the NHL's gameType for the regular season (3 is playoffs).
-	gameTypeRegularSeason = 2
+	// gameTypePlayoffs is the NHL's gameType for the playoffs (1 preseason, 2 regular
+	// season). Only the playoffs take a full intermission before overtime.
+	gameTypePlayoffs = 3
 	// regulationPeriods is the number of periods before overtime.
 	regulationPeriods = 3
 )
@@ -220,15 +221,16 @@ func ShouldReschedule(payload models.Payload, resp *models.PlayByPlayResponse) b
 }
 
 // RescheduleInterval returns the next-check interval. Intermissions use the long
-// interval except from regulation's end onward in the regular season, where
-// overtime follows in about a minute. The playoffs keep the long interval there:
-// their breaks are full intermissions.
+// interval except from regulation's end onward outside the playoffs (regular
+// season and preseason), where overtime follows in about a minute. The playoffs
+// keep the long interval there: their breaks are full intermissions. An unknown or
+// missing gameType fails short, so a dropped field costs polls, not a late final push.
 func RescheduleInterval(resp *models.PlayByPlayResponse, cfg *config.Config) time.Duration {
 	short := time.Duration(cfg.MessageIntervalSeconds) * time.Second
 	if resp == nil || !resp.Clock.InIntermission {
 		return short
 	}
-	if resp.PeriodDescriptor.Number >= regulationPeriods && resp.GameType == gameTypeRegularSeason {
+	if resp.PeriodDescriptor.Number >= regulationPeriods && resp.GameType != gameTypePlayoffs {
 		return short
 	}
 	return time.Duration(cfg.PeriodEndIntervalSeconds) * time.Second

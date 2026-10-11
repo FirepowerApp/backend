@@ -90,6 +90,13 @@ func TestRescheduleInterval(t *testing.T) {
 		{"RegularSeason_P3", pbp(2, "LIVE", 3, "REG", true, "01:00", "period-end"), short},
 		{"RegularSeason_P4", pbp(2, "LIVE", 4, "OT", true, "01:00", "period-end"), short},
 
+		// Preseason (gameType 1) shares the regular season's overtime rules (the old
+		// maxPeriods check was present for it too), and a response missing gameType
+		// must fail short, never sleep through an overtime.
+		{"Preseason_P3", pbp(1, "LIVE", 3, "REG", true, "01:00", "period-end"), short},
+		{"Preseason_P1", pbp(1, "LIVE", 1, "REG", true, "17:42", "period-end"), long},
+		{"MissingGameType_P3", pbp(0, "LIVE", 3, "REG", true, "01:00", "period-end"), short},
+
 		// Playoff breaks are full intermissions. Asserted before this change at
 		// Playoffs_Period3 / Playoffs_OTPeriod4; sending 60s here would push ~18
 		// identical Live Activity updates per break.

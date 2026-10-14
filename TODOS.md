@@ -109,3 +109,30 @@
   validity check next to `FetchPlayByPlay`'s decode; unit-test with a response missing `homeTeam`.
 - **Depends on / blocked by:** Nothing.
 - **Where to start:** `models/playbyplayresponse.go` and `FormatGameState`.
+
+## Make sports pluggable without changing the core processor
+
+- **What:** Restructure so that adding a sport (e.g. baseball) means adding registered
+  component(s), with no diff to the core game processor.
+- **Why:** The processor asks sport-neutral questions but answers them with NHL logic:
+  fetch state (`FetchPlayByPlay`), is this event worth a push (`recomputeTypes`), is the
+  game over (`IsFinal`), what does the state label say (`FormatGameState`), and when to
+  check next (`RescheduleInterval`: intermission, `gameType`, regulation periods).
+  `models.Team` mirrors the NHL schedule shape (`CommonName["default"]`). `nonCSVKeys` is
+  a symptom: notifier keys double as MoneyPuck column names, so the processor has to
+  subtract the keys it fills itself.
+- **Context:** Directions from design discussion, not settled:
+  - Notifiers declare which source each need comes from (X from MoneyPuck, Y from NHL);
+    an aggregator fetches per source and hands the notifier one map. This makes source
+    conflicts explicit (this branch's bug was goals coming from the wrong source).
+  - The scheduler payload is not a data source; its `Team` shape is NHL-coupled.
+  - Data needs differ per sport, but the send mechanism (e.g. APNs) would be nearly
+    identical, so a full notifier per sport would duplicate delivery code.
+  - Open: what owns the sport rules above; where derived values like `gameState` live;
+    who decides when to fetch a source; per-notifier policy when one source is down.
+- **Depends on / blocked by:** A second sport or stats source actually being needed. A
+  Live Activity for a new sport also needs an iOS widget (`content-state` is a wire
+  contract) and its own channel map (`liveactivity/channels.go` is NHL teams).
+- **Where to start:** `watchgameupdates/internal/services/gameprocessor.go`
+  `ProcessGameUpdate`, `internal/notification/types.go` `GetRequiredDataKeys`,
+  `internal/models/payload.go`.

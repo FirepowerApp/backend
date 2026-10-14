@@ -7,7 +7,6 @@ type PeriodDescriptor struct {
 
 type Play struct {
 	TypeDescKey      string           `json:"typeDescKey"`
-	Period           int              `json:"period"`
 	PeriodDescriptor PeriodDescriptor `json:"periodDescriptor"`
 	TimeInPeriod     string           `json:"timeInPeriod"`
 	TimeRemaining    string           `json:"timeRemaining"`

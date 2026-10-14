@@ -13,8 +13,6 @@ type formatMessageTestCase struct {
 	awayGoals              string
 	homeXG                 string
 	awayXG                 string
-	homeShootOutGoals      string
-	awayShootOutGoals      string
 	expectedScore          string
 	expectedHomeXG         string
 	expectedAwayXG         string
@@ -33,8 +31,6 @@ func TestDiscordNotifier_FormatMessage(t *testing.T) {
 			awayGoals:              "1",
 			homeXG:                 "2.5",
 			awayXG:                 "1.2",
-			homeShootOutGoals:      "0",
-			awayShootOutGoals:      "0",
 			expectedScore:          "CHI 3 - 1 DET",
 			expectedHomeXG:         "CHI: 2.5",
 			expectedAwayXG:         "DET: 1.2",
@@ -50,8 +46,6 @@ func TestDiscordNotifier_FormatMessage(t *testing.T) {
 			awayGoals:              "4",
 			homeXG:                 "1.8",
 			awayXG:                 "3.5",
-			homeShootOutGoals:      "0",
-			awayShootOutGoals:      "0",
 			expectedScore:          "CHI 1 - 4 DET",
 			expectedHomeXG:         "CHI: 1.8",
 			expectedAwayXG:         "DET: 3.5",
@@ -67,8 +61,6 @@ func TestDiscordNotifier_FormatMessage(t *testing.T) {
 			awayGoals:              "2",
 			homeXG:                 "2.0",
 			awayXG:                 "2.0",
-			homeShootOutGoals:      "", // Missing shootout data
-			awayShootOutGoals:      "",
 			expectedScore:          "CHI 2 - 2 DET",
 			expectedHomeXG:         "CHI: 2.0",
 			expectedAwayXG:         "DET: 2.0",
@@ -84,8 +76,6 @@ func TestDiscordNotifier_FormatMessage(t *testing.T) {
 			awayGoals:              "1",
 			homeXG:                 "", // Missing xG data
 			awayXG:                 "",
-			homeShootOutGoals:      "0",
-			awayShootOutGoals:      "0",
 			expectedScore:          "CHI 3 - 1 DET",
 			expectedHomeXG:         "",
 			expectedAwayXG:         "",
@@ -125,12 +115,6 @@ func buildNotificationRequest(tc formatMessageTestCase) NotificationRequest {
 	}
 	if tc.awayXG != "" {
 		data["awayTeamExpectedGoals"] = tc.awayXG
-	}
-	if tc.homeShootOutGoals != "" {
-		data["homeTeamShootOutGoals"] = tc.homeShootOutGoals
-	}
-	if tc.awayShootOutGoals != "" {
-		data["awayTeamShootOutGoals"] = tc.awayShootOutGoals
 	}
 
 	return NotificationRequest{

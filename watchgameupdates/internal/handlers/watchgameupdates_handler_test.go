@@ -3,12 +3,17 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"watchgameupdates/config"
 	"watchgameupdates/internal/models"
+	"watchgameupdates/internal/notification"
+	"watchgameupdates/internal/services"
 
 	taskspb "cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 )
@@ -91,3 +96,31 @@ func (e *erroringCloudTasksClient) CreateTask(_ context.Context, _ *taskspb.Crea
 }
 
 func (e *erroringCloudTasksClient) Close() error { return nil }
+
+// scheduleNextCheck used to call log.Fatalf when it could not build the Cloud
+// Tasks client, which exits the process. The handler is a single replica, so that
+// took down tracking for every game in flight. If the Fatalf returns, this test
+// kills its own binary instead of failing politely, which is the point.
+func TestWatchGameUpdatesHandler_TasksClientErrorReturns500AndSurvives(t *testing.T) {
+	// Play-by-play is down, so the handler must reschedule, which builds the client.
+	pbp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer pbp.Close()
+	t.Setenv("PLAYBYPLAY_API_BASE_URL", pbp.URL)
+
+	// No emulator, and credentials that cannot load: NewCloudTasksClient fails
+	// deterministically, whatever the developer's own gcloud login looks like.
+	t.Setenv("USE_TASKS_EMULATOR", "false")
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/nonexistent/credentials.json")
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("{}"))
+	WatchGameUpdatesHandler(w, r, &services.HTTPGameDataFetcher{},
+		notification.NewServiceWithNotificationFlag(true),
+		models.Payload{Game: models.Game{ID: "2025030415"}})
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 so Cloud Tasks retries, got %d", w.Code)
+	}
+}

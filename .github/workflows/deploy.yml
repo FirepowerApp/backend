@@ -185,6 +185,33 @@ jobs:
       - name: Validate rendered manifests
         run: kubectl apply --dry-run=client -f rendered-app.yaml
 
+      # The rolling update below deletes the outgoing pods, and kubelet garbage-
+      # collects their log files with them. Keep what kubectl can still read so a
+      # previous iteration's behavior can be reviewed after it is replaced.
+      # Best-effort: a capture problem must never block a deploy.
+      - name: Capture outgoing pod logs
+        continue-on-error: true
+        env:
+          NS: ${{ steps.env.outputs.namespace }}
+        run: |
+          mkdir -p pod-logs
+          for d in handler cloudtasks; do
+            kubectl logs -n "$NS" "deploy/$d" --timestamps > "pod-logs/$d.log" 2>&1 || true
+            kubectl logs -n "$NS" "deploy/$d" --timestamps --previous > "pod-logs/$d.previous.log" 2>&1 || true
+          done
+
+      - name: Upload outgoing pod logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: pod-logs-${{ steps.env.outputs.environment }}-${{ github.run_id }}
+          path: pod-logs/
+          if-no-files-found: ignore
+          # The repo is public and these are production logs: keep them only as long
+          # as a previous iteration is plausibly under review.
+          retention-days: 14
+
       - name: Apply workloads
         run: kubectl apply -f rendered-app.yaml
 

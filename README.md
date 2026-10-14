@@ -293,9 +293,10 @@ kubectl -n firepower logs -l app=backend --tail=30
 > Adding a brand-new notifier type (one not yet implemented in the codebase) requires a code change, a new image build, and a full deployment before it can be enabled via the configmap.
 
 **Tuning reschedule intervals:** `MESSAGE_INTERVAL_SECONDS` controls how frequently the
-handler re-checks a live game (default 60s). When a period ends, the service uses
+handler re-checks a live game (default 60s). During an intermission, the service uses
 `PERIOD_END_INTERVAL_SECONDS` instead (default 1200s / 20 minutes) to avoid unnecessary
-polling during intermissions.
+polling. The exception is the end of regulation outside the playoffs, where overtime
+follows in about a minute, so the short interval is kept.
 
 ## Testing
 
@@ -433,8 +434,8 @@ Uses `docker-compose.redis.yml`:
 - **GameProcessor** - Shared game-check logic (fetch play-by-play, fetch stats, send notifications)
 - **WatchGameUpdatesHandler** (HTTP) - HTTP handler for Cloud Tasks mode
 - **WatchGameUpdatesHandler** (Asynq) - Task handler for Redis worker mode
-- **HTTPGameDataFetcher** - Fetches game data from NHL/MoneyPuck APIs
-- **Rescheduler** - Determines if a game check should be rescheduled
+- **HTTPGameDataFetcher** - Fetches MoneyPuck expected goals (xG only); score, game state and clock come from the NHL play-by-play document
+- **ShouldReschedule / RescheduleInterval** (in `GameProcessor`) - Decide whether and when to re-check a game
 
 ### Data Flow
 
